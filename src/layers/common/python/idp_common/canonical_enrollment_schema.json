@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Medicare Supplement Enrollment - Canonical Schema",
+  "description": "DRAFT. Adjust to match the fields required by the existing Enrollment API's insurance update XML once that schema is available.",
+  "type": "object",
+  "properties": {
+    "documentId": { "type": "string" },
+    "state": { "type": "string" },
+    "documentType": { "type": "string" },
+    "sourceBucket": { "type": "string" },
+    "sourceKey": { "type": "string" },
+    "applicantName": { "type": "string" },
+    "applicantDateOfBirth": { "type": "string" },
+    "applicantAddress": { "type": "string" },
+    "applicantPhone": { "type": "string" },
+    "medicareNumber": { "type": "string" },
+    "partAEffectiveDate": { "type": "string" },
+    "partBEffectiveDate": { "type": "string" },
+    "planSelected": { "type": "string" },
+    "planEffectiveDate": { "type": "string" },
+    "replacingExistingCoverage": { "type": "string" },
+    "signatureDate": { "type": "string" }
+  },
+  "required": [
+    "documentId",
+    "applicantName",
+    "applicantDateOfBirth",
+    "medicareNumber",
+    "planSelected",
+    "planEffectiveDate"
+  ]
+}

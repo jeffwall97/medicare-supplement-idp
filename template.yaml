@@ -1,0 +1,390 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Intelligent document processing pipeline for Medicare Supplement enrollment
+  documents. Ingests PDFs/scanned images, extracts fields via Textract
+  Queries (template-based), conforms them to a canonical schema, and hands
+  off to the existing XML-based Enrollment API.
+
+Metadata:
+  cfn-lint:
+    config:
+      # W1028: false positive on UseMockEnrollmentApi - cfn-lint flags the
+      # MockEnrollmentApi reference in SubmitToEnrollmentApiFunction's Fn::If
+      # as unreachable when DeployMockEnrollmentApi is False (Stage=prod).
+      # That's the intended behavior: the mock resources don't exist in
+      # prod, so the branch that would reference them correctly never runs.
+      ignore_checks:
+        - W1028
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+  EnrollmentApiEndpoint:
+    Type: String
+    Description: >
+      Base URL of the existing Enrollment API "insurance update" endpoint.
+      Leave blank in dev/test to auto-wire to the built-in mock Enrollment
+      API instead (see DeployMockEnrollmentApi condition); leave blank in
+      prod (where the mock isn't deployed) to skip submission entirely.
+    Default: ""
+
+Conditions:
+  DeployMockEnrollmentApi: !Not [!Equals [!Ref Stage, prod]]
+  UseMockEnrollmentApi: !And
+    - !Not [!Equals [!Ref Stage, prod]]
+    - !Equals [!Ref EnrollmentApiEndpoint, ""]
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures: [arm64]
+    Timeout: 60
+    MemorySize: 256
+    Tracing: Active
+    Environment:
+      Variables:
+        POWERTOOLS_LOG_LEVEL: INFO
+        STAGE: !Ref Stage
+
+Resources:
+
+  DocumentsKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub Encryption key for IDP Medicare Supplement pipeline (${Stage})
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableRootAccountFullAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+
+  DocumentsKmsKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/idp-medicare-enrollment-${Stage}"
+      TargetKeyId: !Ref DocumentsKmsKey
+
+  RawDocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "idp-medicare-enrollment-raw-${Stage}-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref DocumentsKmsKey
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+
+  ProcessedDocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "idp-medicare-enrollment-processed-${Stage}-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !Ref DocumentsKmsKey
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  EnrollmentRecordsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "idp-enrollment-records-${Stage}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: documentId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: ingestedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: documentId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: ingestedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !Ref DocumentsKmsKey
+
+  ProcessingDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "idp-processing-dlq-${Stage}"
+      KmsMasterKeyId: !Ref DocumentsKmsKey
+      MessageRetentionPeriod: 1209600
+
+  CommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub "idp-common-${Stage}"
+      Description: Shared canonical schema, validator, and Textract query definitions
+      ContentUri: src/layers/common/
+      CompatibleRuntimes: [python3.13]
+      RetentionPolicy: Delete
+    Metadata:
+      BuildMethod: python3.13
+
+  ClassifyDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-classify-document-${Stage}"
+      CodeUri: src/functions/classify_document/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+
+  StartTextractAnalysisFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-start-textract-analysis-${Stage}"
+      CodeUri: src/functions/start_textract_analysis/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref RawDocumentsBucket
+        - Statement:
+            - Effect: Allow
+              Action: textract:StartDocumentAnalysis
+              Resource: "*"
+
+  CheckTextractStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-check-textract-status-${Stage}"
+      CodeUri: src/functions/check_textract_status/
+      Handler: app.handler
+      Timeout: 120
+      Environment:
+        Variables:
+          PROCESSED_BUCKET: !Ref ProcessedDocumentsBucket
+      Policies:
+        - S3WritePolicy:
+            BucketName: !Ref ProcessedDocumentsBucket
+        - Statement:
+            - Effect: Allow
+              Action: kms:GenerateDataKey
+              Resource: !GetAtt DocumentsKmsKey.Arn
+            - Effect: Allow
+              Action: textract:GetDocumentAnalysis
+              Resource: "*"
+
+  ParseAndValidateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-parse-and-validate-${Stage}"
+      CodeUri: src/functions/parse_and_validate/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+      Environment:
+        Variables:
+          PROCESSED_BUCKET: !Ref ProcessedDocumentsBucket
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ProcessedDocumentsBucket
+        - S3WritePolicy:
+            BucketName: !Ref ProcessedDocumentsBucket
+        - Statement:
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:GenerateDataKey]
+              Resource: !GetAtt DocumentsKmsKey.Arn
+
+  StoreCanonicalRecordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-store-canonical-record-${Stage}"
+      CodeUri: src/functions/store_canonical_record/
+      Handler: app.handler
+      Environment:
+        Variables:
+          PROCESSED_BUCKET: !Ref ProcessedDocumentsBucket
+          TABLE_NAME: !Ref EnrollmentRecordsTable
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ProcessedDocumentsBucket
+        - DynamoDBWritePolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - Statement:
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:GenerateDataKey]
+              Resource: !GetAtt DocumentsKmsKey.Arn
+
+  TransformToXmlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-transform-to-xml-${Stage}"
+      CodeUri: src/functions/transform_to_xml/
+      Handler: app.handler
+      Environment:
+        Variables:
+          PROCESSED_BUCKET: !Ref ProcessedDocumentsBucket
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ProcessedDocumentsBucket
+        - S3WritePolicy:
+            BucketName: !Ref ProcessedDocumentsBucket
+        - Statement:
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:GenerateDataKey]
+              Resource: !GetAtt DocumentsKmsKey.Arn
+
+  SubmitToEnrollmentApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-submit-enrollment-${Stage}"
+      CodeUri: src/functions/submit_enrollment/
+      Handler: app.handler
+      Environment:
+        Variables:
+          PROCESSED_BUCKET: !Ref ProcessedDocumentsBucket
+          TABLE_NAME: !Ref EnrollmentRecordsTable
+          ENROLLMENT_API_ENDPOINT: !If
+            - UseMockEnrollmentApi
+            - !Sub "https://${MockEnrollmentApi}.execute-api.${AWS::Region}.amazonaws.com/insurance-update"
+            - !Ref EnrollmentApiEndpoint
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref ProcessedDocumentsBucket
+        - DynamoDBWritePolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - Statement:
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt DocumentsKmsKey.Arn
+
+  # --- Mock Enrollment API (dev/test only) ---------------------------------
+  # Stands in for the real Enrollment API so the pipeline can be exercised
+  # end-to-end before that integration is finalized. Auto-wired into
+  # SubmitToEnrollmentApiFunction above whenever EnrollmentApiEndpoint is
+  # left blank and Stage != prod (see UseMockEnrollmentApi condition).
+
+  MockEnrollmentSubmissionsTable:
+    Type: AWS::DynamoDB::Table
+    Condition: DeployMockEnrollmentApi
+    Properties:
+      TableName: !Sub "idp-mock-enrollment-submissions-${Stage}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: submissionId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: submissionId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+
+  MockEnrollmentApi:
+    Type: AWS::Serverless::HttpApi
+    Condition: DeployMockEnrollmentApi
+    Properties:
+      StageName: $default
+
+  MockEnrollmentApiFunction:
+    Type: AWS::Serverless::Function
+    Condition: DeployMockEnrollmentApi
+    Properties:
+      FunctionName: !Sub "idp-mock-enrollment-api-${Stage}"
+      CodeUri: src/functions/mock_enrollment_api/
+      Handler: app.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref MockEnrollmentSubmissionsTable
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref MockEnrollmentSubmissionsTable
+      Events:
+        InsuranceUpdate:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref MockEnrollmentApi
+            Path: /insurance-update
+            Method: POST
+
+  PipelineStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub "idp-medicare-enrollment-pipeline-${Stage}"
+      DefinitionUri: statemachine/pipeline.asl.json
+      DefinitionSubstitutions:
+        ClassifyDocumentFunctionArn: !GetAtt ClassifyDocumentFunction.Arn
+        StartTextractAnalysisFunctionArn: !GetAtt StartTextractAnalysisFunction.Arn
+        CheckTextractStatusFunctionArn: !GetAtt CheckTextractStatusFunction.Arn
+        ParseAndValidateFunctionArn: !GetAtt ParseAndValidateFunction.Arn
+        StoreCanonicalRecordFunctionArn: !GetAtt StoreCanonicalRecordFunction.Arn
+        TransformToXmlFunctionArn: !GetAtt TransformToXmlFunction.Arn
+        SubmitToEnrollmentApiFunctionArn: !GetAtt SubmitToEnrollmentApiFunction.Arn
+        DeadLetterQueueUrl: !Ref ProcessingDeadLetterQueue
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ClassifyDocumentFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref StartTextractAnalysisFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CheckTextractStatusFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ParseAndValidateFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref StoreCanonicalRecordFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref TransformToXmlFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SubmitToEnrollmentApiFunction
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt ProcessingDeadLetterQueue.QueueName
+      Events:
+        DocumentUploaded:
+          Type: EventBridgeRule
+          Properties:
+            Pattern:
+              source: [aws.s3]
+              detail-type: [Object Created]
+              detail:
+                bucket:
+                  name: [!Ref RawDocumentsBucket]
+
+Outputs:
+  RawDocumentsBucketName:
+    Value: !Ref RawDocumentsBucket
+  ProcessedDocumentsBucketName:
+    Value: !Ref ProcessedDocumentsBucket
+  EnrollmentRecordsTableName:
+    Value: !Ref EnrollmentRecordsTable
+  PipelineStateMachineArn:
+    Value: !Ref PipelineStateMachine
+  MockEnrollmentApiUrl:
+    Condition: DeployMockEnrollmentApi
+    Value: !Sub "https://${MockEnrollmentApi}.execute-api.${AWS::Region}.amazonaws.com/insurance-update"
+  MockEnrollmentSubmissionsTableName:
+    Condition: DeployMockEnrollmentApi
+    Value: !Ref MockEnrollmentSubmissionsTable

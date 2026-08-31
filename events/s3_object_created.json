@@ -1,0 +1,23 @@
+{
+  "version": "0",
+  "id": "example-event-id",
+  "detail-type": "Object Created",
+  "source": "aws.s3",
+  "account": "123456789012",
+  "time": "2026-08-31T00:00:00Z",
+  "region": "us-east-1",
+  "resources": ["arn:aws:s3:::idp-medicare-enrollment-raw-dev-123456789012"],
+  "detail": {
+    "version": "0",
+    "bucket": { "name": "idp-medicare-enrollment-raw-dev-123456789012" },
+    "object": {
+      "key": "incoming/CA/sample-enrollment-001.pdf",
+      "size": 123456,
+      "etag": "example-etag",
+      "sequencer": "0055AED6DCD90281E5"
+    },
+    "request-id": "example-request-id",
+    "requester": "123456789012",
+    "reason": "PutObject"
+  }
+}

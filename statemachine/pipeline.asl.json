@@ -1,0 +1,181 @@
+{
+  "Comment": "Medicare Supplement enrollment document IDP pipeline",
+  "StartAt": "PrepareInput",
+  "States": {
+    "PrepareInput": {
+      "Type": "Pass",
+      "Parameters": {
+        "document": {
+          "bucket.$": "$.detail.bucket.name",
+          "key.$": "$.detail.object.key",
+          "documentId.$": "States.UUID()"
+        }
+      },
+      "Next": "ClassifyDocument"
+    },
+    "ClassifyDocument": {
+      "Type": "Task",
+      "Resource": "${ClassifyDocumentFunctionArn}",
+      "ResultPath": "$.classification",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "Next": "StartTextractAnalysis"
+    },
+    "StartTextractAnalysis": {
+      "Type": "Task",
+      "Resource": "${StartTextractAnalysisFunctionArn}",
+      "ResultPath": "$.textractJob",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "Next": "WaitForTextract"
+    },
+    "WaitForTextract": {
+      "Type": "Wait",
+      "Seconds": 15,
+      "Next": "CheckTextractStatus"
+    },
+    "CheckTextractStatus": {
+      "Type": "Task",
+      "Resource": "${CheckTextractStatusFunctionArn}",
+      "ResultPath": "$.textractStatus",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "Next": "IsTextractComplete"
+    },
+    "IsTextractComplete": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.textractStatus.jobStatus", "StringEquals": "SUCCEEDED", "Next": "ParseAndValidate" },
+        { "Variable": "$.textractStatus.jobStatus", "StringEquals": "FAILED", "Next": "SendToDeadLetterQueue" }
+      ],
+      "Default": "WaitForTextract"
+    },
+    "ParseAndValidate": {
+      "Type": "Task",
+      "Resource": "${ParseAndValidateFunctionArn}",
+      "ResultPath": "$.canonical",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "Next": "NeedsHumanReview"
+    },
+    "NeedsHumanReview": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.canonical.validationStatus", "StringEquals": "NEEDS_REVIEW", "Next": "FlagForReview" }
+      ],
+      "Default": "StoreCanonicalRecord"
+    },
+    "FlagForReview": {
+      "Type": "Task",
+      "Resource": "${StoreCanonicalRecordFunctionArn}",
+      "Parameters": {
+        "document.$": "$.document",
+        "classification.$": "$.classification",
+        "canonical.$": "$.canonical",
+        "status": "NEEDS_REVIEW"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "End": true
+    },
+    "StoreCanonicalRecord": {
+      "Type": "Task",
+      "Resource": "${StoreCanonicalRecordFunctionArn}",
+      "Parameters": {
+        "document.$": "$.document",
+        "classification.$": "$.classification",
+        "canonical.$": "$.canonical",
+        "status": "READY_FOR_SUBMISSION"
+      },
+      "ResultPath": "$.storeResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "Next": "TransformToXml"
+    },
+    "TransformToXml": {
+      "Type": "Task",
+      "Resource": "${TransformToXmlFunctionArn}",
+      "ResultPath": "$.xmlPayload",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "Next": "SubmitToEnrollmentApi"
+    },
+    "SubmitToEnrollmentApi": {
+      "Type": "Task",
+      "Resource": "${SubmitToEnrollmentApiFunctionArn}",
+      "ResultPath": "$.submissionResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "End": true
+    },
+    "SendToDeadLetterQueue": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "Parameters": {
+        "QueueUrl": "${DeadLetterQueueUrl}",
+        "MessageBody.$": "$"
+      },
+      "Next": "PipelineFailed"
+    },
+    "PipelineFailed": {
+      "Type": "Fail",
+      "Error": "DocumentProcessingFailed"
+    }
+  }
+}
