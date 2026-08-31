@@ -3,7 +3,7 @@ import os
 
 from jsonschema import Draft7Validator
 
-CONFIDENCE_THRESHOLD = 85.0
+CONFIDENCE_THRESHOLD = 75.0
 
 _SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "canonical_enrollment_schema.json")
 with open(_SCHEMA_PATH) as _f:
