@@ -12,8 +12,10 @@ transformed XML to the existing Enrollment API's "insurance update" endpoint.
 
 ```
 S3 (raw upload) --EventBridge--> Step Functions pipeline:
-  ClassifyDocument
-    -> StartTextractAnalysis (async Textract job, FORMS + QUERIES)
+  StartTextDetection (async Textract job, plain OCR - text only)
+    -> WaitForTextDetection / CheckTextDetectionStatus (poll loop)
+    -> ClassifyDocument (matches detected text against configured form fingerprints)
+    -> StartTextractAnalysis (async Textract job, FORMS + QUERIES for the classified variant)
     -> WaitForTextract / CheckTextractStatus (poll loop)
     -> ParseAndValidate (Textract answers -> canonical record, schema + confidence check)
     -> [FlagForReview | StoreCanonicalRecord] (DynamoDB)
@@ -33,7 +35,9 @@ S3 (raw upload) --EventBridge--> Step Functions pipeline:
 - **Lambda functions** (`src/functions/`):
   | Function | Responsibility |
   |---|---|
-  | `classify_document` | Determines document type/state/variant. v1 uses the `incoming/<state>/<filename>` upload convention — see the docstring for the plan to move to content-based classification. |
+  | `start_text_detection` | Kicks off a plain-OCR async Textract `StartDocumentTextDetection` job (no FORMS/QUERIES) purely to get text for classification, before the variant — and therefore the right query set — is known. |
+  | `check_text_detection_status` | Polls that job and returns the joined `LINE` text directly (small enough to pass through state, no S3 round-trip). |
+  | `classify_document` | Matches the detected text against configured form fingerprints (`idp_common.classification_config.CLASSIFICATION_RULES`) to determine document type/state/variant — content-based, independent of the S3 upload path. |
   | `start_textract_analysis` | Kicks off an async Textract `StartDocumentAnalysis` job using the query set for the document's variant. |
   | `check_textract_status` | Polls the Textract job and writes the merged Blocks to S3 once it succeeds. |
   | `parse_and_validate` | Extracts Textract Query answers into the canonical schema, checks field confidence against `CONFIDENCE_THRESHOLD`, and JSON-Schema-validates the result. |
@@ -41,26 +45,36 @@ S3 (raw upload) --EventBridge--> Step Functions pipeline:
   | `transform_to_xml` | Maps the canonical record to the `<InsuranceUpdate>` XML the Enrollment API expects (placeholder mapping — see TODO in the module). |
   | `submit_enrollment` | POSTs the XML to the Enrollment API and records the outcome. In `dev`/`test`, auto-wires to the built-in mock Enrollment API (below) if `EnrollmentApiEndpoint` isn't set; no-ops (`SUBMISSION_SKIPPED`) in `prod` if it isn't set. |
   | `mock_enrollment_api` | Dev/test stand-in for the real Enrollment API. Accepts the posted XML, stores it in `MockEnrollmentSubmissionsTable` so submissions can be inspected, and returns an `<InsuranceUpdateAck>`. Never deployed for `Stage=prod`. |
-- **Common layer** (`src/layers/common/python/idp_common/`) — shared across
+- **Common layer** (`src/layers/common/idp_common/`) — shared across
   functions:
   - `canonical_enrollment_schema.json` / `schema.py` — the canonical record's
-    JSON Schema and a `validate_canonical_record()` helper.
-  - `textract_queries.py` — the template-based Textract Queries and the
-    field map from query alias to canonical field name, per document
+    JSON Schema, `CONFIDENCE_THRESHOLD`, and a `validate_canonical_record()`
+    helper.
+  - `classification_config.py` — the configured form fingerprints
+    (`CLASSIFICATION_RULES`: required text markers per state/carrier) that
+    `classify_document` matches against. Onboard a new state/carrier form by
+    adding an entry here.
+  - `textract_queries.py` — the template-based Textract Queries, the field
+    map from query alias to canonical field name, and the checkbox-field
+    config (`DEFAULT_SELECTION_FIELDS`) that `parse_and_validate` matches
+    against Textract FORMS' `SELECTION_ELEMENT` blocks — each per document
     variant (`DEFAULT_*` plus per-state `VARIANT_*` overrides).
 
 ### Template-based today, LLM-assisted later
 
-Extraction is currently 100% template-based: a fixed set of Textract Queries
-per variant, mapped to canonical fields, validated against a confidence
-threshold and a JSON Schema. This keeps costs low and behavior predictable
-for the common case. The `variant` concept (state-specific query sets and
-field maps in `textract_queries.py`) is the seam for handling state-specific
+Classification and extraction are currently 100% template/config-based:
+`classify_document` matches OCR'd text against a configured set of form
+fingerprints (`classification_config.CLASSIFICATION_RULES`), and extraction
+runs a fixed set of Textract Queries per variant, mapped to canonical
+fields, validated against a confidence threshold and a JSON Schema. This
+keeps costs low and behavior predictable for the common case. The `variant`
+concept (state-specific query sets, field maps, and selection-field configs
+in `textract_queries.py`) is the seam for handling state-specific
 branding/verbiage differences without forking the pipeline. An LLM-based
-extraction/classification path (e.g., for documents that don't fit any
-known template, or for `classify_document`'s v1 filename-convention
-shortcut) can be added later as an alternate branch feeding the same
-canonical schema and validation step, without changing anything downstream.
+classification/extraction path — for documents that don't match any
+configured fingerprint (`state: "UNKNOWN"`, `variant: "DEFAULT"`) — can be
+added later as an alternate branch feeding the same canonical schema and
+validation step, without changing anything downstream.
 
 ## Known TODOs
 
@@ -70,9 +84,10 @@ canonical schema and validation step, without changing anything downstream.
 - `submit_enrollment`: no authentication is sent yet. Add whatever the
   Enrollment API requires (API key / OAuth / mTLS), pulled from Secrets
   Manager.
-- `classify_document`: v1 relies on the `incoming/<state>/<filename>`
-  upload convention. Replace with content-based classification once
-  documents can arrive without a reliable naming convention.
+- `classify_document`: content-based, matched against
+  `CLASSIFICATION_RULES` — currently only has a fingerprint for the MI form.
+  Onboard each new state/carrier form by adding a rule (and, if its field
+  layout differs, a matching `VARIANT_*` entry in `textract_queries.py`).
 - `canonical_enrollment_schema.json` is a draft — align its required
   fields with what the Enrollment API's XML actually requires.
 - Textract Queries extract free-text/typed answers reliably but can't read
@@ -155,11 +170,14 @@ Subsequent deploys: `sam deploy`.
 
 ### Try it
 
-Upload a sample document to the raw bucket using the `incoming/<state>/`
-convention `classify_document` expects, e.g. using the included test fixture
+Upload a sample document to the raw bucket to trigger the pipeline via
+EventBridge, e.g. using the included test fixture
 (`tests/fixtures/sample-medicare-supplement-application-mi.pdf` — a synthetic,
 clearly-watermarked stand-in for a real BCBSM Medicare Supplement application,
-filled with fictitious applicant data covering every canonical field):
+filled with fictitious applicant data covering every canonical field).
+Classification is content-based (see Architecture above), so the S3 key can
+be anything — `incoming/<state>/` below is just a human-readable convention,
+not something the pipeline reads:
 
 ```
 aws s3 cp tests/fixtures/sample-medicare-supplement-application-mi.pdf \

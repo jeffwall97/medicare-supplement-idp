@@ -1,22 +1,15 @@
 """Determines document type and state/variant so downstream steps know which
 Textract query template and field map to use.
 
-v1 relies on an "incoming/<state>/<filename>" upload convention. Replace with
-real content-based classification (Textract + keyword matching, or Comprehend)
-once documents arrive without a reliable folder/filename convention.
+v2: matches OCR'd text from the text-detection pass against
+idp_common.classification_config.CLASSIFICATION_RULES - a configured set of
+per-carrier/state form fingerprints - rather than an S3 upload path
+convention. Onboard a new state/carrier by adding a rule there.
 """
+
+from idp_common.classification_config import classify_text
 
 
 def handler(event, context):
-    document = event["document"]
-    key_parts = document["key"].split("/")
-
-    state = "UNKNOWN"
-    if len(key_parts) > 2 and key_parts[0] == "incoming":
-        state = key_parts[1].upper()
-
-    return {
-        "documentType": "MEDICARE_SUPPLEMENT_ENROLLMENT",
-        "state": state,
-        "variant": state if state != "UNKNOWN" else "DEFAULT",
-    }
+    text = event["textDetection"]["text"]
+    return classify_text(text)

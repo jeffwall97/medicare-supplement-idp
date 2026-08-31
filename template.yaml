@@ -199,6 +199,40 @@ Resources:
     Metadata:
       BuildMethod: python3.13
 
+  StartTextDetectionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-start-text-detection-${Stage}"
+      CodeUri: src/functions/start_text_detection/
+      Handler: app.handler
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref RawDocumentsBucket
+        - Statement:
+            - Effect: Allow
+              Action: textract:StartDocumentTextDetection
+              Resource: "*"
+            # See the matching comment on StartTextractAnalysisFunction below:
+            # Textract needs the calling role to also decrypt the SSE-KMS
+            # object itself, not just the resource-based grants on the
+            # bucket/key.
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt DocumentsKmsKey.Arn
+
+  CheckTextDetectionStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-check-text-detection-status-${Stage}"
+      CodeUri: src/functions/check_text_detection_status/
+      Handler: app.handler
+      Timeout: 120
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: textract:GetDocumentTextDetection
+              Resource: "*"
+
   ClassifyDocumentFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -387,6 +421,8 @@ Resources:
       Name: !Sub "idp-medicare-enrollment-pipeline-${Stage}"
       DefinitionUri: statemachine/pipeline.asl.json
       DefinitionSubstitutions:
+        StartTextDetectionFunctionArn: !GetAtt StartTextDetectionFunction.Arn
+        CheckTextDetectionStatusFunctionArn: !GetAtt CheckTextDetectionStatusFunction.Arn
         ClassifyDocumentFunctionArn: !GetAtt ClassifyDocumentFunction.Arn
         StartTextractAnalysisFunctionArn: !GetAtt StartTextractAnalysisFunction.Arn
         CheckTextractStatusFunctionArn: !GetAtt CheckTextractStatusFunction.Arn
@@ -396,6 +432,10 @@ Resources:
         SubmitToEnrollmentApiFunctionArn: !GetAtt SubmitToEnrollmentApiFunction.Arn
         DeadLetterQueueUrl: !Ref ProcessingDeadLetterQueue
       Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref StartTextDetectionFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref CheckTextDetectionStatusFunction
         - LambdaInvokePolicy:
             FunctionName: !Ref ClassifyDocumentFunction
         - LambdaInvokePolicy:

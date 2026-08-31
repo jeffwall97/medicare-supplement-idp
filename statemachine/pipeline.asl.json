@@ -11,7 +11,50 @@
           "documentId.$": "States.UUID()"
         }
       },
-      "Next": "ClassifyDocument"
+      "Next": "StartTextDetection"
+    },
+    "StartTextDetection": {
+      "Type": "Task",
+      "Resource": "${StartTextDetectionFunctionArn}",
+      "ResultPath": "$.textDetectionJob",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "Next": "WaitForTextDetection"
+    },
+    "WaitForTextDetection": {
+      "Type": "Wait",
+      "Seconds": 10,
+      "Next": "CheckTextDetectionStatus"
+    },
+    "CheckTextDetectionStatus": {
+      "Type": "Task",
+      "Resource": "${CheckTextDetectionStatusFunctionArn}",
+      "ResultPath": "$.textDetection",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "Next": "IsTextDetectionComplete"
+    },
+    "IsTextDetectionComplete": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.textDetection.jobStatus", "StringEquals": "SUCCEEDED", "Next": "ClassifyDocument" },
+        { "Variable": "$.textDetection.jobStatus", "StringEquals": "FAILED", "Next": "SendToDeadLetterQueue" }
+      ],
+      "Default": "WaitForTextDetection"
     },
     "ClassifyDocument": {
       "Type": "Task",

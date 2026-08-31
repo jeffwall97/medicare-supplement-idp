@@ -3,25 +3,32 @@ from conftest import load_handler_module
 app = load_handler_module("classify_document")
 
 
-def test_classifies_state_from_incoming_prefix():
-    event = {"document": {"key": "incoming/ca/application.pdf"}}
+def test_classifies_known_form_from_detected_text():
+    event = {
+        "textDetection": {
+            "text": "Blue Cross Medicare Supplement\nBlue Cross Blue Shield of Michigan\n2026 Medicare supplement application\n"
+        }
+    }
     result = app.handler(event, None)
     assert result == {
         "documentType": "MEDICARE_SUPPLEMENT_ENROLLMENT",
-        "state": "CA",
-        "variant": "CA",
+        "state": "MI",
+        "variant": "MI",
     }
 
 
-def test_falls_back_to_default_variant_when_state_unknown():
-    event = {"document": {"key": "application.pdf"}}
+def test_unrecognized_text_falls_back_to_default_variant():
+    event = {"textDetection": {"text": "Some unrelated document text"}}
     result = app.handler(event, None)
     assert result["state"] == "UNKNOWN"
     assert result["variant"] == "DEFAULT"
 
 
-def test_requires_state_segment_after_incoming():
-    event = {"document": {"key": "incoming/application.pdf"}}
+def test_matching_is_case_insensitive():
+    event = {
+        "textDetection": {
+            "text": "BLUE CROSS BLUE SHIELD OF MICHIGAN medicare SUPPLEMENT enrollment"
+        }
+    }
     result = app.handler(event, None)
-    assert result["state"] == "UNKNOWN"
-    assert result["variant"] == "DEFAULT"
+    assert result["state"] == "MI"
