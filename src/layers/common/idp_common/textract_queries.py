@@ -45,6 +45,19 @@ DEFAULT_FIELD_MAP = {
 VARIANT_QUERIES = {}
 VARIANT_FIELD_MAPS = {}
 
+# Fields that real enrollment forms typically represent as checkboxes rather
+# than free text (a plan-selection row, a yes/no question). Textract Queries
+# can't reliably read a checkbox's answer, so parse_and_validate falls back
+# to Textract FORMS' SELECTION_ELEMENT blocks for these: each canonical field
+# maps to the ordered list of checkbox labels that can appear next to it on
+# the form, and whichever one comes back SELECTED is the answer.
+DEFAULT_SELECTION_FIELDS = {
+    "planSelected": ["A", "C", "D", "F", "HD-F", "G", "HD-G", "N"],
+    "replacingExistingCoverage": ["Yes", "No"],
+}
+
+VARIANT_SELECTION_FIELDS = {}
+
 
 def get_queries_for_variant(variant):
     return VARIANT_QUERIES.get(variant, DEFAULT_QUERIES)
@@ -52,3 +65,7 @@ def get_queries_for_variant(variant):
 
 def get_field_map_for_variant(variant):
     return VARIANT_FIELD_MAPS.get(variant, DEFAULT_FIELD_MAP)
+
+
+def get_selection_fields_for_variant(variant):
+    return VARIANT_SELECTION_FIELDS.get(variant, DEFAULT_SELECTION_FIELDS)

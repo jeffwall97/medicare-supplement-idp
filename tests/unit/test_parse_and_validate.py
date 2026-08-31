@@ -51,6 +51,42 @@ def _blocks_for(answers_with_confidence):
     return blocks
 
 
+def _checkbox_blocks_for(checkboxes):
+    """checkboxes: {key_label: (SelectionStatus, confidence)}"""
+    blocks = []
+    for i, (key_label, (status, confidence)) in enumerate(checkboxes.items()):
+        word_id, key_id, value_id, selection_id = (f"word-{i}", f"key-{i}", f"value-{i}", f"selection-{i}")
+        blocks.append({"Id": word_id, "BlockType": "WORD", "Text": key_label})
+        blocks.append(
+            {
+                "Id": key_id,
+                "BlockType": "KEY_VALUE_SET",
+                "EntityTypes": ["KEY"],
+                "Relationships": [
+                    {"Type": "CHILD", "Ids": [word_id]},
+                    {"Type": "VALUE", "Ids": [value_id]},
+                ],
+            }
+        )
+        blocks.append(
+            {
+                "Id": value_id,
+                "BlockType": "KEY_VALUE_SET",
+                "EntityTypes": ["VALUE"],
+                "Relationships": [{"Type": "CHILD", "Ids": [selection_id]}],
+            }
+        )
+        blocks.append(
+            {
+                "Id": selection_id,
+                "BlockType": "SELECTION_ELEMENT",
+                "SelectionStatus": status,
+                "Confidence": confidence,
+            }
+        )
+    return blocks
+
+
 def _s3_object(blocks):
     body = MagicMock()
     body.read.return_value = json.dumps({"Blocks": blocks}).encode("utf-8")
@@ -113,3 +149,56 @@ def test_missing_required_answer_fails_schema_and_flags_review(monkeypatch):
     assert result["validationStatus"] == "NEEDS_REVIEW"
     assert "medicareNumber" in result["lowConfidenceFields"]
     assert any("medicareNumber" in error for error in result["schemaErrors"])
+
+
+def test_selected_checkbox_fills_in_field_the_query_pass_missed(monkeypatch):
+    answers = {alias: (text, 99.0) for alias, text in ANSWERS.items() if alias != "PLAN_SELECTED"}
+    checkboxes = {
+        "A": ("NOT_SELECTED", 99.0),
+        "G": ("SELECTED", 98.5),
+        "N": ("NOT_SELECTED", 99.0),
+    }
+    fake_s3 = MagicMock()
+    fake_s3.get_object.return_value = _s3_object(_blocks_for(answers) + _checkbox_blocks_for(checkboxes))
+    monkeypatch.setattr(app, "s3", fake_s3)
+    monkeypatch.setattr(app, "PROCESSED_BUCKET", "processed-bucket")
+
+    result = app.handler(_event(), None)
+
+    saved_record = json.loads(fake_s3.put_object.call_args.kwargs["Body"])
+    assert saved_record["planSelected"] == "G"
+    assert "planSelected" not in result["lowConfidenceFields"]
+    assert result["validationStatus"] == "VALID"
+
+
+def test_high_confidence_checkbox_clears_a_low_confidence_query_answer(monkeypatch):
+    answers = {alias: (text, 99.0) for alias, text in ANSWERS.items()}
+    answers["REPLACING_COVERAGE"] = ("No", 30.0)
+    checkboxes = {"Yes": ("NOT_SELECTED", 99.0), "No": ("SELECTED", 97.0)}
+    fake_s3 = MagicMock()
+    fake_s3.get_object.return_value = _s3_object(_blocks_for(answers) + _checkbox_blocks_for(checkboxes))
+    monkeypatch.setattr(app, "s3", fake_s3)
+    monkeypatch.setattr(app, "PROCESSED_BUCKET", "processed-bucket")
+
+    result = app.handler(_event(), None)
+
+    saved_record = json.loads(fake_s3.put_object.call_args.kwargs["Body"])
+    assert saved_record["replacingExistingCoverage"] == "No"
+    assert "replacingExistingCoverage" not in result["lowConfidenceFields"]
+    assert result["validationStatus"] == "VALID"
+
+
+def test_no_checkbox_selected_leaves_field_missing_and_flagged(monkeypatch):
+    answers = {alias: (text, 99.0) for alias, text in ANSWERS.items() if alias != "PLAN_SELECTED"}
+    checkboxes = {"A": ("NOT_SELECTED", 99.0), "G": ("NOT_SELECTED", 99.0)}
+    fake_s3 = MagicMock()
+    fake_s3.get_object.return_value = _s3_object(_blocks_for(answers) + _checkbox_blocks_for(checkboxes))
+    monkeypatch.setattr(app, "s3", fake_s3)
+    monkeypatch.setattr(app, "PROCESSED_BUCKET", "processed-bucket")
+
+    result = app.handler(_event(), None)
+
+    saved_record = json.loads(fake_s3.put_object.call_args.kwargs["Body"])
+    assert "planSelected" not in saved_record
+    assert "planSelected" in result["lowConfidenceFields"]
+    assert result["validationStatus"] == "NEEDS_REVIEW"

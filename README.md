@@ -75,17 +75,18 @@ canonical schema and validation step, without changing anything downstream.
   documents can arrive without a reliable naming convention.
 - `canonical_enrollment_schema.json` is a draft — align its required
   fields with what the Enrollment API's XML actually requires.
-- Textract Queries extract free-text/typed answers reliably but are weak
-  against checkbox-only answers (plan selection, yes/no questions), which is
-  how real Medigap forms represent `planSelected` and
-  `replacingExistingCoverage` — confirmed against the fixture in
-  `tests/fixtures/`, where both fields consistently need review.
-  `start_textract_analysis` already requests `FeatureTypes: [FORMS, QUERIES]`,
-  and Textract's FORMS output includes `SELECTION_ELEMENT` blocks
-  (`SELECTED`/`NOT_SELECTED`) for exactly this case, but `parse_and_validate`
-  currently only reads `QUERY`/`QUERY_RESULT` blocks. Extending it to also
-  read nearby `SELECTION_ELEMENT` blocks (associated via FORMS key-value
-  relationships) for checkbox-shaped fields should close this gap.
+- Textract Queries extract free-text/typed answers reliably but can't read
+  checkbox-only answers (plan selection, yes/no questions), which is how
+  real Medigap forms represent `planSelected` and
+  `replacingExistingCoverage`. `parse_and_validate` now falls back to
+  Textract FORMS' `SELECTION_ELEMENT` blocks for any canonical field
+  configured in `idp_common.textract_queries.DEFAULT_SELECTION_FIELDS`
+  (add per-variant overrides the same way as `VARIANT_FIELD_MAPS`).
+  Confirmed against the fixture in `tests/fixtures/`: both fields now
+  extract the correct value, though checkbox-detection confidence tends to
+  run lower than text OCR confidence (~80-84% there, against a threshold of
+  85), so they may still land in `lowConfidenceFields` pending a real scan
+  rather than a synthetic PDF.
 
 ## Project layout
 
