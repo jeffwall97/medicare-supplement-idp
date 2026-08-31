@@ -8,6 +8,8 @@ transformed XML to the existing Enrollment API's "insurance update" endpoint.
 
 ## Architecture
 
+![Architecture diagram: an enrollment document lands in S3, EventBridge starts a Step Functions state machine that classifies it, runs it through Textract, validates and stores a canonical record in DynamoDB, transforms it to XML, and submits it to a mock or real Enrollment API, with any step failure routed to a dead-letter queue.](docs/architecture.svg)
+
 ```
 S3 (raw upload) --EventBridge--> Step Functions pipeline:
   ClassifyDocument
