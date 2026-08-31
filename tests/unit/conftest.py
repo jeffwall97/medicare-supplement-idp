@@ -3,7 +3,7 @@ import os
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-COMMON_LAYER_PYTHON = os.path.join(REPO_ROOT, "src", "layers", "common", "python")
+COMMON_LAYER_PYTHON = os.path.join(REPO_ROOT, "src", "layers", "common")
 FUNCTIONS_DIR = os.path.join(REPO_ROOT, "src", "functions")
 
 if COMMON_LAYER_PYTHON not in sys.path:

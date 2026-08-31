@@ -75,6 +75,17 @@ canonical schema and validation step, without changing anything downstream.
   documents can arrive without a reliable naming convention.
 - `canonical_enrollment_schema.json` is a draft — align its required
   fields with what the Enrollment API's XML actually requires.
+- Textract Queries extract free-text/typed answers reliably but are weak
+  against checkbox-only answers (plan selection, yes/no questions), which is
+  how real Medigap forms represent `planSelected` and
+  `replacingExistingCoverage` — confirmed against the fixture in
+  `tests/fixtures/`, where both fields consistently need review.
+  `start_textract_analysis` already requests `FeatureTypes: [FORMS, QUERIES]`,
+  and Textract's FORMS output includes `SELECTION_ELEMENT` blocks
+  (`SELECTED`/`NOT_SELECTED`) for exactly this case, but `parse_and_validate`
+  currently only reads `QUERY`/`QUERY_RESULT` blocks. Extending it to also
+  read nearby `SELECTION_ELEMENT` blocks (associated via FORMS key-value
+  relationships) for checkbox-shaped fields should close this gap.
 
 ## Project layout
 
@@ -144,10 +155,14 @@ Subsequent deploys: `sam deploy`.
 ### Try it
 
 Upload a sample document to the raw bucket using the `incoming/<state>/`
-convention `classify_document` expects, e.g.:
+convention `classify_document` expects, e.g. using the included test fixture
+(`tests/fixtures/sample-medicare-supplement-application-mi.pdf` — a synthetic,
+clearly-watermarked stand-in for a real BCBSM Medicare Supplement application,
+filled with fictitious applicant data covering every canonical field):
 
 ```
-aws s3 cp sample.pdf s3://<RawDocumentsBucketName>/incoming/ca/sample.pdf
+aws s3 cp tests/fixtures/sample-medicare-supplement-application-mi.pdf \
+  s3://<RawDocumentsBucketName>/incoming/mi/sample.pdf
 ```
 
 This triggers the Step Functions execution via EventBridge. Watch progress

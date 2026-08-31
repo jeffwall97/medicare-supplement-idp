@@ -40,7 +40,15 @@ Conditions:
 Globals:
   Function:
     Runtime: python3.13
-    Architectures: [arm64]
+    # x86_64: sam build has no Docker available in this dev environment, so
+    # the common layer's pip dependencies (jsonschema -> rpds-py, a native
+    # extension) build for whatever platform the local pip resolves against
+    # rather than the function's declared architecture. Without a container
+    # build (`sam build --use-container`), that resolves to x86_64 wheels
+    # regardless of what's set here, so arm64 caused an exec-format failure
+    # at runtime. Switch back to arm64 once builds run through a container
+    # or CI that can target it correctly.
+    Architectures: [x86_64]
     Timeout: 60
     MemorySize: 256
     Tracing: Active
@@ -65,6 +73,21 @@ Resources:
               AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
             Action: "kms:*"
             Resource: "*"
+          # Textract fetches RawDocumentsBucket objects directly from S3 using its own
+          # service identity, not the calling Lambda's credentials - without this,
+          # StartDocumentAnalysis jobs fail with S3_OBJECT_INACCESSIBLE against an
+          # SSE-KMS bucket using a customer-managed key.
+          - Sid: AllowTextractToDecryptS3Objects
+            Effect: Allow
+            Principal:
+              Service: textract.amazonaws.com
+            Action:
+              - kms:Decrypt
+              - kms:DescribeKey
+            Resource: "*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
 
   DocumentsKmsKeyAlias:
     Type: AWS::KMS::Alias
@@ -91,6 +114,26 @@ Resources:
       NotificationConfiguration:
         EventBridgeConfiguration:
           EventBridgeEnabled: true
+
+  RawDocumentsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref RawDocumentsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          # Textract's async StartDocumentAnalysis fetches the S3 object using its own
+          # service identity, not the calling Lambda's role - without this, jobs fail
+          # with S3_OBJECT_INACCESSIBLE even though the Lambda itself has S3ReadPolicy.
+          - Sid: AllowTextractRead
+            Effect: Allow
+            Principal:
+              Service: textract.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${RawDocumentsBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
 
   ProcessedDocumentsBucket:
     Type: AWS::S3::Bucket
@@ -178,6 +221,13 @@ Resources:
             - Effect: Allow
               Action: textract:StartDocumentAnalysis
               Resource: "*"
+            # Textract's S3 fetch for the async job fails with S3_OBJECT_INACCESSIBLE
+            # unless the calling role can also decrypt the object itself - the
+            # bucket/key resource policies granting textract.amazonaws.com access
+            # aren't sufficient on their own.
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt DocumentsKmsKey.Arn
 
   CheckTextractStatusFunction:
     Type: AWS::Serverless::Function
@@ -362,6 +412,10 @@ Resources:
             FunctionName: !Ref SubmitToEnrollmentApiFunction
         - SQSSendMessagePolicy:
             QueueName: !GetAtt ProcessingDeadLetterQueue.QueueName
+        - Statement:
+            - Effect: Allow
+              Action: kms:GenerateDataKey
+              Resource: !GetAtt DocumentsKmsKey.Arn
       Events:
         DocumentUploaded:
           Type: EventBridgeRule
