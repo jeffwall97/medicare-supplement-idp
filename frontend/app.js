@@ -39,6 +39,15 @@ let currentDocumentId = null;
 let historyDocuments = [];
 let historyPage = 0;
 const HISTORY_PAGE_SIZE = 10;
+// Mirrors delete_document's BLOCKED_STATUSES - deleting while the pipeline
+// may still be writing to the record can race with its UpdateItem calls.
+const DELETE_BLOCKED_STATUSES = new Set(["UPLOADED", "PROCESSING"]);
+const TRASH_ICON_SVG =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline>' +
+  '<path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path>' +
+  '<path d="M10 11v6"></path><path d="M14 11v6"></path>' +
+  '<path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>';
 
 const el = (id) => document.getElementById(id);
 
@@ -323,6 +332,24 @@ function renderHistoryPage() {
       <td>${pillFor(doc.status)}</td>
       <td>${formatTimestamp(doc.ingestedAt)}</td>
     `;
+
+    const actionsCell = document.createElement("td");
+    actionsCell.className = "actions-col";
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "icon-button delete-button";
+    deleteButton.innerHTML = TRASH_ICON_SVG;
+    const blocked = DELETE_BLOCKED_STATUSES.has(doc.status);
+    deleteButton.disabled = blocked;
+    deleteButton.title = blocked ? `Cannot delete while ${statusMeta(doc.status).label.toLowerCase()}` : "Delete permanently";
+    deleteButton.setAttribute("aria-label", "Delete document");
+    deleteButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      handleDeleteClick(doc);
+    });
+    actionsCell.appendChild(deleteButton);
+    row.appendChild(actionsCell);
+
     body.appendChild(row);
   });
 
@@ -347,6 +374,42 @@ async function loadHistory() {
     renderHistoryPage();
   } catch (err) {
     console.error(err);
+  }
+}
+
+function clearHistoryError() {
+  el("history-error").hidden = true;
+}
+
+function showHistoryError(message) {
+  const errorEl = el("history-error");
+  errorEl.textContent = message;
+  errorEl.hidden = false;
+}
+
+async function deleteDocument(documentId) {
+  const response = await fetch(`${API_BASE}/documents/${documentId}`, { method: "DELETE" });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.message || `Delete failed (${response.status})`);
+  }
+}
+
+async function handleDeleteClick(doc) {
+  clearHistoryError();
+  const label = doc.originalFilename || doc.sourceKey || doc.documentId;
+  if (!confirm(`Permanently delete "${label}"? This cannot be undone.`)) return;
+
+  try {
+    await deleteDocument(doc.documentId);
+    if (currentDocumentId === doc.documentId) {
+      stopPolling();
+      currentDocumentId = null;
+      el("tracking-card").hidden = true;
+    }
+    await loadHistory();
+  } catch (err) {
+    showHistoryError(err.message);
   }
 }
 

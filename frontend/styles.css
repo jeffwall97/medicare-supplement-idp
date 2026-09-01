@@ -233,6 +233,19 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
   border-bottom: 1px solid var(--border);
 }
 .history-table td { padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.history-table .actions-col { width: 32px; text-align: center; }
+
+.icon-button {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  padding: 5px;
+  border-radius: 5px;
+  line-height: 0;
+  align-self: auto;
+}
+.icon-button:hover:not(:disabled) { background: var(--red-bg); color: var(--red); }
+.icon-button:disabled { background: transparent; color: var(--border); cursor: not-allowed; }
 .history-table tr:last-child td { border-bottom: none; }
 .history-table tr.clickable { cursor: pointer; }
 .history-table tr.clickable:hover { background: var(--bg); }

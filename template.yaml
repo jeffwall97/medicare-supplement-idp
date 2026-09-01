@@ -369,6 +369,7 @@ Resources:
       FunctionName: !Sub "idp-transform-to-xml-${Stage}"
       CodeUri: src/functions/transform_to_xml/
       Handler: app.handler
+      Layers: [!Ref CommonLayer]
       Environment:
         Variables:
           PROCESSED_BUCKET: !Ref ProcessedDocumentsBucket
@@ -388,6 +389,7 @@ Resources:
       FunctionName: !Sub "idp-submit-enrollment-${Stage}"
       CodeUri: src/functions/submit_enrollment/
       Handler: app.handler
+      Layers: [!Ref CommonLayer]
       Environment:
         Variables:
           PROCESSED_BUCKET: !Ref ProcessedDocumentsBucket
@@ -610,6 +612,44 @@ Resources:
             ApiId: !Ref WebAppApi
             Path: /api/documents
             Method: GET
+
+  DeleteDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-delete-document-${Stage}"
+      CodeUri: src/functions/delete_document/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EnrollmentRecordsTable
+          PROCESSED_BUCKET: !Ref ProcessedDocumentsBucket
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - DynamoDBWritePolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - Statement:
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:GenerateDataKey]
+              Resource: !GetAtt DocumentsKmsKey.Arn
+            - Effect: Allow
+              Action: s3:DeleteObject
+              Resource:
+                - !Sub "${RawDocumentsBucket.Arn}/*"
+                - !Sub "${ProcessedDocumentsBucket.Arn}/*"
+            # DynamoDBWritePolicy covers PutItem/UpdateItem/BatchWriteItem
+            # but not DeleteItem - needs its own explicit grant.
+            - Effect: Allow
+              Action: dynamodb:DeleteItem
+              Resource: !GetAtt EnrollmentRecordsTable.Arn
+      Events:
+        DeleteDocument:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref WebAppApi
+            Path: /api/documents/{documentId}
+            Method: DELETE
 
   FrontendBucket:
     Type: AWS::S3::Bucket
