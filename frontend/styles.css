@@ -245,3 +245,20 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
 .pill.pending { color: var(--muted); background: #f0f2f4; }
 
 .empty { color: var(--muted); font-size: 13.5px; }
+
+.history-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 14px;
+}
+.history-pager button {
+  background: #fff;
+  color: var(--blue);
+  border: 1px solid var(--blue);
+  padding: 6px 14px;
+}
+.history-pager button:hover:not(:disabled) { background: #eef6fd; }
+.history-pager button:disabled { background: #fff; color: var(--border); border-color: var(--border); }
+.history-pager span { color: var(--muted); font-size: 12.5px; }

@@ -36,6 +36,9 @@ const CANONICAL_FIELDS = [
 
 let pollTimer = null;
 let currentDocumentId = null;
+let historyDocuments = [];
+let historyPage = 0;
+const HISTORY_PAGE_SIZE = 10;
 
 const el = (id) => document.getElementById(id);
 
@@ -296,33 +299,52 @@ function formatTimestamp(isoString) {
   return Number.isNaN(date.getTime()) ? isoString : date.toLocaleString();
 }
 
+function renderHistoryPage() {
+  const totalPages = Math.max(1, Math.ceil(historyDocuments.length / HISTORY_PAGE_SIZE));
+  historyPage = Math.min(historyPage, totalPages - 1);
+  const start = historyPage * HISTORY_PAGE_SIZE;
+  const pageDocuments = historyDocuments.slice(start, start + HISTORY_PAGE_SIZE);
+
+  const body = el("history-body");
+  body.innerHTML = "";
+
+  const status = el("status-filter").value;
+  const emptyEl = el("history-empty");
+  emptyEl.hidden = historyDocuments.length > 0;
+  emptyEl.textContent = status ? "No documents with this status." : "No documents uploaded yet.";
+
+  pageDocuments.forEach((doc) => {
+    const row = document.createElement("tr");
+    row.className = "clickable";
+    row.addEventListener("click", () => trackDocument(doc.documentId));
+    row.innerHTML = `
+      <td>${doc.originalFilename || doc.sourceKey || doc.documentId}</td>
+      <td>${doc.state || ""}</td>
+      <td>${pillFor(doc.status)}</td>
+      <td>${formatTimestamp(doc.ingestedAt)}</td>
+    `;
+    body.appendChild(row);
+  });
+
+  const pager = el("history-pager");
+  pager.hidden = historyDocuments.length <= HISTORY_PAGE_SIZE;
+  el("history-page-info").textContent = `Page ${historyPage + 1} of ${totalPages}`;
+  el("history-prev").disabled = historyPage === 0;
+  el("history-next").disabled = historyPage >= totalPages - 1;
+}
+
 async function loadHistory() {
   try {
     const status = el("status-filter").value;
-    const params = new URLSearchParams({ limit: "25" });
+    const params = new URLSearchParams({ limit: "100" });
     if (status) params.set("status", status);
     const response = await fetch(`${API_BASE}/documents?${params}`);
     if (!response.ok) throw new Error(`Could not load history (${response.status})`);
     const { documents } = await response.json();
 
-    const body = el("history-body");
-    body.innerHTML = "";
-    const emptyEl = el("history-empty");
-    emptyEl.hidden = documents.length > 0;
-    emptyEl.textContent = status ? "No documents with this status." : "No documents uploaded yet.";
-
-    documents.forEach((doc) => {
-      const row = document.createElement("tr");
-      row.className = "clickable";
-      row.addEventListener("click", () => trackDocument(doc.documentId));
-      row.innerHTML = `
-        <td>${doc.originalFilename || doc.sourceKey || doc.documentId}</td>
-        <td>${doc.state || ""}</td>
-        <td>${pillFor(doc.status)}</td>
-        <td>${formatTimestamp(doc.ingestedAt)}</td>
-      `;
-      body.appendChild(row);
-    });
+    historyDocuments = documents;
+    historyPage = 0;
+    renderHistoryPage();
   } catch (err) {
     console.error(err);
   }
@@ -423,6 +445,14 @@ function setupFileDrop() {
 
 document.getElementById("upload-form").addEventListener("submit", handleUploadSubmit);
 document.getElementById("refresh-button").addEventListener("click", loadHistory);
+document.getElementById("history-prev").addEventListener("click", () => {
+  historyPage -= 1;
+  renderHistoryPage();
+});
+document.getElementById("history-next").addEventListener("click", () => {
+  historyPage += 1;
+  renderHistoryPage();
+});
 document.getElementById("status-filter").addEventListener("change", loadHistory);
 document.getElementById("save-button").addEventListener("click", handleSaveClick);
 document.getElementById("edit-form").addEventListener("input", () => {
