@@ -145,6 +145,10 @@ function renderEditForm(doc) {
   });
 
   el("resubmit-button").disabled = (doc.schemaErrors || []).length > 0;
+  // A fresh render reflects exactly what's saved server-side - nothing
+  // unsaved yet, so Save changes starts greyed out until the user edits
+  // a field again (see the edit-form "input" listener below).
+  el("save-button").disabled = true;
 }
 
 function collectEditFormValues() {
@@ -354,11 +358,13 @@ async function handleSaveClick() {
 
   try {
     const doc = await patchDocument(currentDocumentId, collectEditFormValues());
+    // renderDocument -> renderEditForm re-greys Save changes (nothing
+    // unsaved right after a successful save) - don't undo that here.
     renderDocument(doc);
     loadHistory();
+    button.textContent = "Save changes";
   } catch (err) {
     showEditError(err.message);
-  } finally {
     button.disabled = false;
     button.textContent = "Save changes";
   }
@@ -419,6 +425,9 @@ document.getElementById("upload-form").addEventListener("submit", handleUploadSu
 document.getElementById("refresh-button").addEventListener("click", loadHistory);
 document.getElementById("status-filter").addEventListener("change", loadHistory);
 document.getElementById("save-button").addEventListener("click", handleSaveClick);
+document.getElementById("edit-form").addEventListener("input", () => {
+  el("save-button").disabled = false;
+});
 document.getElementById("resubmit-button").addEventListener("click", handleResubmitClick);
 setupFileDrop();
 loadHistory();
