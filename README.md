@@ -268,7 +268,15 @@ Two more fixtures cover different states/carriers on the real-world happy
 path: `sample-medicare-supplement-application-ga.pdf` (Anthem, Georgia —
 `VALID`/`SUBMITTED`) and `...-tn.pdf` (BlueCross BlueShield of Tennessee
 BlueElite — extracts correctly but lands in `NEEDS_REVIEW` on confidence,
-see Known TODOs).
+see Known TODOs). `...-mi-low-confidence-phone.pdf` deliberately exercises
+the web app's edit-and-resubmit flow: every field is typed/machine-printed
+except the phone number, which is rendered hand-written into the field
+(a script font, unlike the monospace used everywhere else) - Textract still
+reads it correctly but with confidence under the threshold, so the document
+lands in `NEEDS_REVIEW` with `lowConfidenceFields: ["applicantPhone"]` and
+`schemaErrors: []` (every other field clean). Good for demonstrating
+`PATCH /api/documents/{id}` + `POST .../resubmit` end-to-end without a
+schema error to work around.
 
 ```
 aws s3 cp tests/fixtures/sample-medicare-supplement-application-mi.pdf \
