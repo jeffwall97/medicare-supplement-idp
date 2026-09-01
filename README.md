@@ -236,12 +236,13 @@ clearly-watermarked stand-in for a real BCBSM Medicare Supplement application,
 filled with fictitious applicant data covering every canonical field).
 Classification is content-based (see Architecture above), so the S3 key can
 be anything — `incoming/<state>/` below is just a human-readable convention,
-not something the pipeline reads. A second fixture,
-`tests/fixtures/sample-medicare-supplement-application-mi-no-plan-selected.pdf`,
-is identical except no plan checkbox is marked in Section 2 — a negative
-test case that isolates the pipeline's handling of a missing required field
-(`schemaErrors: ["'planSelected' is a required property"]`, `NEEDS_REVIEW`,
-every other field still extracted correctly).
+not something the pipeline reads. Two more fixtures isolate a single
+missing required field each (all other fields filled in correctly):
+`...-no-plan-selected.pdf` (no plan checkbox marked —
+`schemaErrors: ["'planSelected' is a required property"]`) and
+`...-no-medicare-number.pdf` (Medicare number field left blank —
+`schemaErrors: ["'medicareNumber' is a required property"]`). Both produce
+`NEEDS_REVIEW` with every other field still extracted correctly.
 
 ```
 aws s3 cp tests/fixtures/sample-medicare-supplement-application-mi.pdf \
