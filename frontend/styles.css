@@ -1,10 +1,15 @@
 :root {
-  --blue: #0a5ca8;
-  --blue-dark: #0a3d6e;
-  --ink: #1a1a1a;
-  --muted: #57606a;
-  --border: #d7dce1;
-  --bg: #f6f8fa;
+  /* healthspringforbrokers.com palette: purple CTA/link accent, dark navy
+     headings/banner, warm cream neutrals (sampled from the live site's
+     computed styles - login button, H2, footer background). */
+  --primary: #9e28b5;
+  --primary-dark: #7a1d8c;
+  --primary-tint: #f5eaf8;
+  --navy: #1f1647;
+  --ink: #221b33;
+  --muted: #6b6558;
+  --border: #dad5c4;
+  --bg: #f6f3ea;
   --card-bg: #ffffff;
   --green: #1a7f37;
   --amber: #9a6700;
@@ -24,7 +29,7 @@ body {
 }
 
 .page-header {
-  background: var(--blue);
+  background: var(--navy);
   color: #fff;
   padding: 28px 24px;
 }
@@ -48,7 +53,7 @@ main {
   padding: 20px 24px;
 }
 
-.card h2 { margin-top: 0; font-size: 16px; color: var(--blue-dark); }
+.card h2 { margin-top: 0; font-size: 16px; color: var(--navy); }
 .card h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 18px 0 8px; }
 
 .file-drop {
@@ -65,14 +70,14 @@ main {
   padding: 12px;
 }
 
-.file-drop.drag-over { border-color: var(--blue); color: var(--blue); background: #eef6fd; }
+.file-drop.drag-over { border-color: var(--primary); color: var(--primary); background: var(--primary-tint); }
 .file-drop input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
 
 #upload-form { display: flex; flex-direction: column; gap: 14px; }
 
 button {
   font: inherit;
-  background: var(--blue);
+  background: var(--primary);
   color: #fff;
   border: none;
   border-radius: 6px;
@@ -81,14 +86,14 @@ button {
   align-self: flex-start;
 }
 
-button:hover { background: var(--blue-dark); }
+button:hover { background: var(--primary-dark); }
 button:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
 
-#refresh-button { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
-#refresh-button:hover { background: #eef6fd; }
+#refresh-button { background: #fff; color: var(--primary); border: 1px solid var(--primary); }
+#refresh-button:hover { background: var(--primary-tint); }
 
-button.secondary { background: #fff; color: var(--blue); border: 1px solid var(--blue); }
-button.secondary:hover { background: #eef6fd; }
+button.secondary { background: #fff; color: var(--primary); border: 1px solid var(--primary); }
+button.secondary:hover { background: var(--primary-tint); }
 button.secondary:disabled { background: #fff; color: var(--border); border-color: var(--border); }
 
 .edit-form {
@@ -120,7 +125,7 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
 }
 
 .edit-form input.flagged { border-color: var(--amber); background: var(--amber-bg); }
-.edit-form input:focus { outline: none; border-color: var(--blue); }
+.edit-form input:focus { outline: none; border-color: var(--primary); }
 
 .edit-actions { display: flex; gap: 10px; margin-top: 14px; }
 
@@ -173,8 +178,8 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
   border: 3px solid var(--bg);
 }
 
-.step.done .dot, .step.active .dot { background: var(--blue); }
-.step.done:not(:first-child)::before, .step.active:not(:first-child)::before { background: var(--blue); }
+.step.done .dot, .step.active .dot { background: var(--primary); }
+.step.done:not(:first-child)::before, .step.active:not(:first-child)::before { background: var(--primary); }
 .step.done .label, .step.active .label { color: var(--ink); font-weight: 600; }
 
 .step.failed .dot { background: var(--red); }
@@ -216,7 +221,7 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
   color: var(--ink);
   background: #fff;
 }
-#status-filter:focus { outline: none; border-color: var(--blue); }
+#status-filter:focus { outline: none; border-color: var(--primary); }
 
 .history-table th {
   text-align: left;
@@ -230,7 +235,7 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
 .history-table td { padding: 8px 4px; border-bottom: 1px solid var(--border); }
 .history-table tr:last-child td { border-bottom: none; }
 .history-table tr.clickable { cursor: pointer; }
-.history-table tr.clickable:hover { background: #f6f8fa; }
+.history-table tr.clickable:hover { background: var(--bg); }
 
 .pill {
   display: inline-block;
@@ -255,10 +260,10 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
 }
 .history-pager button {
   background: #fff;
-  color: var(--blue);
-  border: 1px solid var(--blue);
+  color: var(--primary);
+  border: 1px solid var(--primary);
   padding: 6px 14px;
 }
-.history-pager button:hover:not(:disabled) { background: #eef6fd; }
+.history-pager button:hover:not(:disabled) { background: var(--primary-tint); }
 .history-pager button:disabled { background: #fff; color: var(--border); border-color: var(--border); }
 .history-pager span { color: var(--muted); font-size: 12.5px; }
