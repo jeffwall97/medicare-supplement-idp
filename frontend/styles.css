@@ -174,7 +174,7 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
 }
 
 .step.done .dot, .step.active .dot { background: var(--blue); }
-.step.done:not(:first-child)::before { background: var(--blue); }
+.step.done:not(:first-child)::before, .step.active:not(:first-child)::before { background: var(--blue); }
 .step.done .label, .step.active .label { color: var(--ink); font-weight: 600; }
 
 .step.failed .dot { background: var(--red); }
