@@ -87,25 +87,25 @@ validation step, without changing anything downstream.
 
 ## Web upload/tracking app
 
-![Web upload/tracking app diagram: a browser talks to a single CloudFront distribution that routes / to a static S3 frontend and /api/* to an HTTP API backed by three Lambdas, which read and write the same RawDocumentsBucket and EnrollmentRecordsTable the IDP pipeline uses; the actual file upload goes directly from the browser to S3 via a presigned URL.](docs/webapp-architecture.svg)
+![Web upload/tracking app diagram: a browser talks to a single CloudFront distribution that routes / to a static S3 frontend and /api/* to an HTTP API backed by several Lambdas, which read and write the same RawDocumentsBucket and EnrollmentRecordsTable the IDP pipeline uses; the actual file upload goes directly from the browser to S3 via a presigned URL. The browser also calls Amazon Cognito directly for registration/login, and every route except GET /api/config requires the resulting JWT.](docs/webapp-architecture.svg)
 
 A static frontend (`frontend/`) lets a user upload an enrollment PDF and
 watch it move through the pipeline above, polling status every few seconds.
-No auth yet (open access, dev-only posture — matches the Mock Enrollment
-API) — tighten before handling real PII. Served through the same CloudFront
-distribution as its API (`/api/*` behavior), so there's no cross-origin
-request involved and no CORS configuration needed for that path.
+Gated behind Cognito (see Authentication below) — served through the same
+CloudFront distribution as its API (`/api/*` behavior), so there's no
+cross-origin request involved and no CORS configuration needed for that path.
 
-- **`WebAppApi`** (HTTP API) + 7 Lambdas:
+- **`WebAppApi`** (HTTP API) + 8 Lambdas:
   | Route | Function | Responsibility |
   |---|---|---|
+  | `GET /api/config` | `get_auth_config` | The only unauthenticated route — returns the Cognito `userPoolClientId`/`region` the frontend needs before a user has ever logged in. |
   | `POST /api/documents` | `request_upload` | Generates a `documentId`, signs a presigned S3 PUT URL (`incoming/web/<id>/<filename>`), and writes the initial `UPLOADED` tracking record. The browser then PUTs the file straight to S3 — never through this API — so large scanned documents aren't limited by API Gateway/Lambda payload sizes. |
   | `GET /api/documents/{documentId}` | `get_document_status` | Returns the current tracking record, or 404. |
   | `GET /api/documents?limit=&status=` | `list_documents` | Returns recent documents, newest first. Unfiltered: a bounded `Scan` (fine at this project's dev/demo scale — see the TODO below to replace with a GSI if that changes). With `status=`: `Query`s `EnrollmentRecordsTable`'s `StatusIndex` GSI directly instead — already sorted, and correct at any volume unlike the Scan path. |
   | `PATCH /api/documents/{documentId}` | `edit_document` | Corrects canonical fields on a `NEEDS_REVIEW` record (400 on an unknown/non-editable field name, 409 if the document isn't `NEEDS_REVIEW`). Merges the given fields onto the stored `canonicalRecord`, re-validates against the canonical schema, and drops any edited field names from `lowConfidenceFields` — a human just supplied them. Status stays `NEEDS_REVIEW`; editing alone never auto-submits. |
   | `POST /api/documents/{documentId}/resubmit` | `resubmit_document` | Submits a reviewed `NEEDS_REVIEW` record to the Enrollment API (409 if not `NEEDS_REVIEW`, 422 with `schemaErrors` if validation still fails). Builds and posts the XML the same way the pipeline's `transform_to_xml`/`submit_enrollment` steps do — via the shared `idp_common.enrollment_submission` module — reading `canonicalRecord` straight from DynamoDB rather than re-running Textract, since the human is correcting already-extracted values, not re-scanning the document. Clears `lowConfidenceFields` on success (resubmission is the human's sign-off) and lands on `SUBMITTED`/`SUBMISSION_FAILED`/`SUBMISSION_SKIPPED` exactly like the pipeline's own submission step. |
   | `DELETE /api/documents/{documentId}` | `delete_document` | Permanently deletes the tracking record and its underlying S3 objects (raw upload + any `canonical`/`xml` output). 404 if missing; 409 while `UPLOADED`/`PROCESSING` — deleting mid-flight would race with the pipeline's own `UpdateItem` calls (which recreate the item via `if_not_exists()` if it's gone), silently "resurrecting" a partial record. |
-  | `GET /api/documents/{documentId}/view` | `view_document` | 302-redirects to a short-lived (5 min) presigned S3 GET URL for the original uploaded PDF, with response headers forcing inline rendering (`ResponseContentType: application/pdf`, `ResponseContentDisposition: inline`). A plain `<a target="_blank">` link can point straight at this route — the browser's own top-level navigation follows the redirect directly to S3 (same pattern as the presigned PUT the upload flow already uses), so PDF bytes never get proxied through API Gateway/Lambda, and CORS doesn't apply to that kind of navigation at all. |
+  | `GET /api/documents/{documentId}/view` | `view_document` | 302-redirects to a short-lived (5 min) presigned S3 GET URL for the original uploaded PDF, with response headers forcing inline rendering (`ResponseContentType: application/pdf`, `ResponseContentDisposition: inline`). Since every route requires a JWT and a bare `<a>` navigation can't carry an `Authorization` header, the frontend calls this with `fetch` instead (which follows the redirect automatically) and opens `response.url` — the resolved presigned S3 URL — in a new tab. PDF bytes still never get proxied through API Gateway/Lambda; only the initial redirect hop is authenticated. |
 - **`FrontendDistribution`** (CloudFront, default `*.cloudfront.net` domain — no custom domain) + **`FrontendBucket`** (private S3, OAC-only) serve `frontend/index.html`/`app.js`/`styles.css`.
 - `RawDocumentsBucket` has a `CorsConfiguration` allowing browser `PUT` (needed because the presigned upload target — the S3 REST endpoint — is a different origin than the page, even though the presigned URL itself is authorized independent of CORS).
 
@@ -119,10 +119,10 @@ buttons re-render the record from the response, so a save's updated
 `lowConfidenceFields`/`schemaErrors` and a resubmit's new terminal status
 show immediately without a poll.
 
-Each row in Recent uploads also has a view (eye) link that opens
-`GET .../{documentId}/view` in a new tab — the browser follows its 302
-straight to the presigned S3 URL, so the PDF just opens in the tab's own
-PDF viewer — and a delete (trash-can) button that calls
+Each row in Recent uploads also has a view (eye) link that opens a new tab
+pointed at the presigned S3 URL `GET .../{documentId}/view` resolves to
+(see the route's own description above for why that's a `fetch` + open
+rather than a plain link) — and a delete (trash-can) button that calls
 `DELETE .../{documentId}` after a confirm prompt. Delete is greyed out while
 a document is `UPLOADED`/`PROCESSING` (matching the endpoint's 409),
 reflecting the current status filter/page and refreshing the list on
@@ -144,6 +144,37 @@ Note: `FrontendDistribution` is a CloudFront distribution — the *first*
 `sam deploy` that creates it takes noticeably longer (~10-20 minutes) than
 this project's other deploys while it propagates; subsequent deploys that
 don't change it are unaffected.
+
+### Authentication
+
+An Amazon Cognito `UserPool`/`UserPoolClient` gate the whole app — `WebAppApi`
+has a `JWT` authorizer as its `DefaultAuthorizer`, so every route requires
+`Authorization: Bearer <idToken>` except `GET /api/config` (which the
+frontend needs *before* a user has logged in, to learn which client ID to
+call Cognito with — see the route table above).
+
+The frontend talks to Cognito directly from the browser (`cognito-idp.<region>
+.amazonaws.com`, plain `fetch` with an `X-Amz-Target` header — Cognito's
+public JSON API, the same one `amazon-cognito-identity-js`/Amplify wrap, so
+no SDK or build step is needed) rather than using Cognito's Hosted UI, to
+keep the login/register forms visually consistent with the rest of the app:
+
+- **Register** → `SignUp` → Cognito emails a 6-digit code (its own default
+  sender, no SES setup) → **Verify** → `ConfirmSignUp` → back to the login
+  form.
+- **Log in** → `InitiateAuth` with the `USER_PASSWORD_AUTH` flow (plain
+  username+password, no SRP math needed client-side) → the returned ID
+  token + email are stored in `localStorage`.
+- Every API call goes through an `authFetch` wrapper that attaches the
+  stored token and, on a `401`, clears the session and drops back to the
+  login form.
+- **Log out** just clears the stored session client-side (Cognito issues
+  short-lived tokens; there's no server-side session to invalidate).
+
+Not included in this pass (noted here rather than silently dropped):
+password reset (`ForgotPassword`/`ConfirmForgotPassword`), refresh-token
+renewal (an expired token logs the user out rather than silently renewing),
+and MFA.
 
 ## Known TODOs
 
@@ -180,8 +211,9 @@ don't change it are unaffected.
   run lower than text OCR confidence (~80-84% there, against a threshold of
   85), so they may still land in `lowConfidenceFields` pending a real scan
   rather than a synthetic PDF.
-- The web app has no auth (see Web upload/tracking app above) — add Cognito
-  (or similar) in front of it before it's used with real enrollment PII.
+- The web app is gated behind Cognito (see Authentication above), but that
+  pass didn't include password reset, refresh-token renewal, or MFA — add
+  before it's used with real enrollment PII.
 - `list_documents` does a full unpaginated `Scan`, fine at this project's
   dev/demo volume. If that changes, replace with a GSI keyed on a constant
   partition + `ingestedAt` sort key rather than scaling the Scan up.
@@ -258,8 +290,10 @@ touch its static assets.
 
 ### Try it
 
-**Via the web app**: open `FrontendDistributionDomainName` (a stack Output)
-and upload a PDF — e.g. the included test fixture below — through the page.
+**Via the web app**: open `FrontendDistributionDomainName` (a stack Output),
+register an account (check the email you sign up with for a verification
+code), log in, then upload a PDF — e.g. the included test fixture below —
+through the page.
 
 **Via the CLI**: upload a sample document to the raw bucket to trigger the
 pipeline via EventBridge, e.g. using the included test fixture

@@ -55,6 +55,212 @@ const EYE_ICON_SVG =
 
 const el = (id) => document.getElementById(id);
 
+// --- Auth: Cognito (direct API calls, no SDK) -----------------------------
+// USER_PASSWORD_AUTH avoids SRP math in plain JS. cognitoConfig is fetched
+// once from the public /api/config route (see get_auth_config) since this
+// static frontend has no build step to inject the deploy-time client ID.
+
+const SESSION_KEY = "idpAuthSession";
+let cognitoConfig = null;
+let pendingVerifyEmail = "";
+
+async function loadAuthConfig() {
+  const response = await fetch(`${API_BASE}/config`);
+  if (!response.ok) throw new Error("Could not load app configuration");
+  cognitoConfig = await response.json();
+}
+
+async function cognitoRequest(action, body) {
+  const response = await fetch(`https://cognito-idp.${cognitoConfig.region}.amazonaws.com/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-amz-json-1.1",
+      "X-Amz-Target": `AWSCognitoIdentityProviderService.${action}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.message || data.__type || `${action} failed (${response.status})`);
+  return data;
+}
+
+function cognitoSignUp(email, password) {
+  return cognitoRequest("SignUp", {
+    ClientId: cognitoConfig.userPoolClientId,
+    Username: email,
+    Password: password,
+    UserAttributes: [{ Name: "email", Value: email }],
+  });
+}
+
+function cognitoConfirmSignUp(email, code) {
+  return cognitoRequest("ConfirmSignUp", {
+    ClientId: cognitoConfig.userPoolClientId,
+    Username: email,
+    ConfirmationCode: code,
+  });
+}
+
+function cognitoResendCode(email) {
+  return cognitoRequest("ResendConfirmationCode", { ClientId: cognitoConfig.userPoolClientId, Username: email });
+}
+
+async function cognitoLogin(email, password) {
+  const data = await cognitoRequest("InitiateAuth", {
+    ClientId: cognitoConfig.userPoolClientId,
+    AuthFlow: "USER_PASSWORD_AUTH",
+    AuthParameters: { USERNAME: email, PASSWORD: password },
+  });
+  return data.AuthenticationResult;
+}
+
+function saveSession(email, idToken) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ email, idToken }));
+}
+
+function getSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+// Wraps fetch for every call to our own API: attaches the ID token, and on
+// a 401 (expired/invalid token - no refresh-token flow in this pass) clears
+// the stored session and drops back to the login form.
+async function authFetch(url, options = {}) {
+  const session = getSession();
+  const headers = { ...(options.headers || {}) };
+  if (session) headers.Authorization = `Bearer ${session.idToken}`;
+
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401) {
+    clearSession();
+    showAuthView("login");
+    throw new Error("Your session has expired. Please log in again.");
+  }
+  return response;
+}
+
+function clearAuthErrors() {
+  el("login-error").hidden = true;
+  el("register-error").hidden = true;
+  el("verify-error").hidden = true;
+}
+
+function showAuthView(view) {
+  el("app-content").hidden = true;
+  el("account-bar").hidden = true;
+  el("auth-card").hidden = false;
+  clearAuthErrors();
+  el("auth-login").hidden = view !== "login";
+  el("auth-register").hidden = view !== "register";
+  el("auth-verify").hidden = view !== "verify";
+}
+
+function showApp() {
+  const session = getSession();
+  el("auth-card").hidden = true;
+  el("app-content").hidden = false;
+  el("account-bar").hidden = false;
+  el("account-email").textContent = session ? session.email : "";
+}
+
+async function handleLoginSubmit(event) {
+  event.preventDefault();
+  const email = el("login-email").value.trim();
+  const password = el("login-password").value;
+  const button = el("login-button");
+  button.disabled = true;
+  button.textContent = "Logging in…";
+
+  try {
+    const result = await cognitoLogin(email, password);
+    saveSession(email, result.IdToken);
+    el("login-form").reset();
+    showApp();
+    loadHistory();
+  } catch (err) {
+    const errorEl = el("login-error");
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Log in";
+  }
+}
+
+async function handleRegisterSubmit(event) {
+  event.preventDefault();
+  const email = el("register-email").value.trim();
+  const password = el("register-password").value;
+  const button = el("register-button");
+  button.disabled = true;
+  button.textContent = "Creating account…";
+
+  try {
+    await cognitoSignUp(email, password);
+    pendingVerifyEmail = email;
+    el("verify-email-text").textContent = `We sent a verification code to ${email}.`;
+    el("register-form").reset();
+    showAuthView("verify");
+  } catch (err) {
+    const errorEl = el("register-error");
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Create account";
+  }
+}
+
+async function handleVerifySubmit(event) {
+  event.preventDefault();
+  const code = el("verify-code").value.trim();
+  const button = el("verify-button");
+  button.disabled = true;
+  button.textContent = "Verifying…";
+
+  try {
+    await cognitoConfirmSignUp(pendingVerifyEmail, code);
+    el("verify-form").reset();
+    el("login-email").value = pendingVerifyEmail;
+    showAuthView("login");
+  } catch (err) {
+    const errorEl = el("verify-error");
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Verify";
+  }
+}
+
+async function handleResendCode() {
+  if (!pendingVerifyEmail) return;
+  try {
+    await cognitoResendCode(pendingVerifyEmail);
+  } catch (err) {
+    const errorEl = el("verify-error");
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+  }
+}
+
+function handleLogout() {
+  clearSession();
+  stopPolling();
+  currentDocumentId = null;
+  el("tracking-card").hidden = true;
+  showAuthView("login");
+}
+
 function statusMeta(status) {
   return STATUS_META[status] || { step: "uploaded", tone: "pending", label: status || "Unknown" };
 }
@@ -226,7 +432,7 @@ function stopPolling() {
 }
 
 async function fetchDocument(documentId) {
-  const response = await fetch(`${API_BASE}/documents/${documentId}`);
+  const response = await authFetch(`${API_BASE}/documents/${documentId}`);
   if (!response.ok) throw new Error(`Status check failed (${response.status})`);
   return response.json();
 }
@@ -264,7 +470,7 @@ function clearUploadError() {
 }
 
 async function requestUpload(file) {
-  const response = await fetch(`${API_BASE}/documents`, {
+  const response = await authFetch(`${API_BASE}/documents`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ filename: file.name }),
@@ -274,6 +480,8 @@ async function requestUpload(file) {
 }
 
 async function uploadToS3(uploadUrl, file) {
+  // Direct presigned PUT to S3 - never through authFetch, an Authorization
+  // header here isn't part of the presigned signature and would break it.
   const response = await fetch(uploadUrl, { method: "PUT", body: file });
   if (!response.ok) throw new Error(`Upload to storage failed (${response.status})`);
 }
@@ -315,6 +523,21 @@ function formatTimestamp(isoString) {
   return Number.isNaN(date.getTime()) ? isoString : date.toLocaleString();
 }
 
+async function handleViewClick(documentId) {
+  // Open the tab synchronously (within the click's own user gesture) so
+  // popup blockers don't step in while we wait on the authenticated fetch;
+  // navigate it once we know where the (redirect-followed) PDF actually is.
+  const newTab = window.open("", "_blank");
+  try {
+    const response = await authFetch(`${API_BASE}/documents/${documentId}/view`);
+    if (!response.ok) throw new Error(`Could not open document (${response.status})`);
+    if (newTab) newTab.location = response.url;
+  } catch (err) {
+    if (newTab) newTab.close();
+    showHistoryError(err.message);
+  }
+}
+
 function renderHistoryPage() {
   const totalPages = Math.max(1, Math.ceil(historyDocuments.length / HISTORY_PAGE_SIZE));
   historyPage = Math.min(historyPage, totalPages - 1);
@@ -346,12 +569,14 @@ function renderHistoryPage() {
     const viewLink = document.createElement("a");
     viewLink.className = "icon-button view-button";
     viewLink.innerHTML = EYE_ICON_SVG;
-    viewLink.href = `${API_BASE}/documents/${doc.documentId}/view`;
-    viewLink.target = "_blank";
-    viewLink.rel = "noopener";
+    viewLink.href = "#";
     viewLink.title = "View PDF";
     viewLink.setAttribute("aria-label", "View uploaded PDF");
-    viewLink.addEventListener("click", (event) => event.stopPropagation());
+    viewLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      handleViewClick(doc.documentId);
+    });
     actionsCell.appendChild(viewLink);
 
     const deleteButton = document.createElement("button");
@@ -384,7 +609,7 @@ async function loadHistory() {
     const status = el("status-filter").value;
     const params = new URLSearchParams({ limit: "100" });
     if (status) params.set("status", status);
-    const response = await fetch(`${API_BASE}/documents?${params}`);
+    const response = await authFetch(`${API_BASE}/documents?${params}`);
     if (!response.ok) throw new Error(`Could not load history (${response.status})`);
     const { documents } = await response.json();
 
@@ -407,7 +632,7 @@ function showHistoryError(message) {
 }
 
 async function deleteDocument(documentId) {
-  const response = await fetch(`${API_BASE}/documents/${documentId}`, { method: "DELETE" });
+  const response = await authFetch(`${API_BASE}/documents/${documentId}`, { method: "DELETE" });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.message || `Delete failed (${response.status})`);
@@ -433,7 +658,7 @@ async function handleDeleteClick(doc) {
 }
 
 async function patchDocument(documentId, edits) {
-  const response = await fetch(`${API_BASE}/documents/${documentId}`, {
+  const response = await authFetch(`${API_BASE}/documents/${documentId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(edits),
@@ -444,7 +669,7 @@ async function patchDocument(documentId, edits) {
 }
 
 async function resubmitDocument(documentId) {
-  const response = await fetch(`${API_BASE}/documents/${documentId}/resubmit`, { method: "POST" });
+  const response = await authFetch(`${API_BASE}/documents/${documentId}/resubmit`, { method: "POST" });
   const body = await response.json();
   if (!response.ok) {
     const detail = body.schemaErrors && body.schemaErrors.length ? `: ${body.schemaErrors.join("; ")}` : "";
@@ -541,5 +766,38 @@ document.getElementById("edit-form").addEventListener("input", () => {
   el("save-button").disabled = false;
 });
 document.getElementById("resubmit-button").addEventListener("click", handleResubmitClick);
+
+document.getElementById("login-form").addEventListener("submit", handleLoginSubmit);
+document.getElementById("register-form").addEventListener("submit", handleRegisterSubmit);
+document.getElementById("verify-form").addEventListener("submit", handleVerifySubmit);
+document.getElementById("resend-code-button").addEventListener("click", handleResendCode);
+document.getElementById("show-register-link").addEventListener("click", (event) => {
+  event.preventDefault();
+  showAuthView("register");
+});
+document.getElementById("show-login-link").addEventListener("click", (event) => {
+  event.preventDefault();
+  showAuthView("login");
+});
+document.getElementById("verify-show-login-link").addEventListener("click", (event) => {
+  event.preventDefault();
+  showAuthView("login");
+});
+document.getElementById("logout-button").addEventListener("click", handleLogout);
+
 setupFileDrop();
-loadHistory();
+
+async function init() {
+  try {
+    await loadAuthConfig();
+  } catch (err) {
+    console.error(err);
+  }
+  if (getSession()) {
+    showApp();
+    loadHistory();
+  } else {
+    showAuthView("login");
+  }
+}
+init();

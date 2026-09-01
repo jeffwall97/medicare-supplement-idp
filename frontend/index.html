@@ -8,11 +8,78 @@
 </head>
 <body>
   <header class="page-header">
-    <h1>Medicare Supplement Enrollment</h1>
-    <p class="subtitle">Upload an enrollment application and track it through processing.</p>
+    <div class="page-header-row">
+      <div>
+        <h1>Medicare Supplement Enrollment</h1>
+        <p class="subtitle">Upload an enrollment application and track it through processing.</p>
+      </div>
+      <div class="account-bar" id="account-bar" hidden>
+        <span id="account-email"></span>
+        <button type="button" id="logout-button" class="secondary">Log out</button>
+      </div>
+    </div>
   </header>
 
   <main>
+    <section class="card" id="auth-card" hidden>
+      <div id="auth-login">
+        <h2>Log in</h2>
+        <form id="login-form" class="edit-form">
+          <div class="field-row">
+            <label for="login-email">Email</label>
+            <input type="email" id="login-email" autocomplete="username" required>
+          </div>
+          <div class="field-row">
+            <label for="login-password">Password</label>
+            <input type="password" id="login-password" autocomplete="current-password" required>
+          </div>
+        </form>
+        <p class="error" id="login-error" hidden></p>
+        <div class="edit-actions">
+          <button type="submit" id="login-button" form="login-form">Log in</button>
+        </div>
+        <p class="auth-switch">Don't have an account? <a href="#" id="show-register-link">Create one</a></p>
+      </div>
+
+      <div id="auth-register" hidden>
+        <h2>Create an account</h2>
+        <form id="register-form" class="edit-form">
+          <div class="field-row">
+            <label for="register-email">Email</label>
+            <input type="email" id="register-email" autocomplete="username" required>
+          </div>
+          <div class="field-row">
+            <label for="register-password">Password</label>
+            <input type="password" id="register-password" autocomplete="new-password" required>
+          </div>
+          <p class="hint">At least 8 characters, with an uppercase letter, a lowercase letter, and a number.</p>
+        </form>
+        <p class="error" id="register-error" hidden></p>
+        <div class="edit-actions">
+          <button type="submit" id="register-button" form="register-form">Create account</button>
+        </div>
+        <p class="auth-switch">Already have an account? <a href="#" id="show-login-link">Log in</a></p>
+      </div>
+
+      <div id="auth-verify" hidden>
+        <h2>Verify your email</h2>
+        <p class="filename" id="verify-email-text"></p>
+        <form id="verify-form" class="edit-form">
+          <div class="field-row">
+            <label for="verify-code">Verification code</label>
+            <input type="text" id="verify-code" inputmode="numeric" autocomplete="one-time-code" required>
+          </div>
+        </form>
+        <p class="error" id="verify-error" hidden></p>
+        <div class="edit-actions">
+          <button type="submit" id="verify-button" form="verify-form">Verify</button>
+          <button type="button" id="resend-code-button" class="secondary">Resend code</button>
+        </div>
+        <p class="auth-switch">Already verified? <a href="#" id="verify-show-login-link">Log in</a></p>
+      </div>
+    </section>
+
+    <div id="app-content" hidden>
     <section class="card" id="upload-card">
       <h2>Upload a document</h2>
       <form id="upload-form">
@@ -94,6 +161,7 @@
         <button type="button" id="history-next">Next</button>
       </div>
     </section>
+    </div>
   </main>
 
   <script src="app.js"></script>

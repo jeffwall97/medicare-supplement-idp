@@ -458,13 +458,68 @@ Resources:
 
   # --- Web upload/tracking app -----------------------------------------
   # Lets a user upload an enrollment PDF through a browser and poll its
-  # status as it moves through the pipeline. No auth yet (dev-only, matches
-  # the Mock Enrollment API's posture) - tighten before handling real PII.
+  # status as it moves through the pipeline. Gated behind Cognito (below) -
+  # every route on WebAppApi requires a signed-in user except GetAuthConfig,
+  # which the frontend needs before a user has logged in at all.
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "idp-medicare-enrollment-users-${Stage}"
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "idp-medicare-enrollment-webapp-${Stage}"
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows: [ALLOW_USER_PASSWORD_AUTH, ALLOW_REFRESH_TOKEN_AUTH]
 
   WebAppApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: $default
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+              audience: [!Ref UserPoolClient]
+            IdentitySource: "$request.header.Authorization"
+        DefaultAuthorizer: CognitoAuthorizer
+
+  GetAuthConfigFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-get-auth-config-${Stage}"
+      CodeUri: src/functions/get_auth_config/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+      Environment:
+        Variables:
+          USER_POOL_CLIENT_ID: !Ref UserPoolClient
+      Events:
+        GetAuthConfig:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref WebAppApi
+            Path: /api/config
+            Method: GET
+            Auth:
+              Authorizer: NONE
 
   RequestUploadFunction:
     Type: AWS::Serverless::Function
@@ -843,3 +898,7 @@ Outputs:
     Value: !Ref FrontendDistribution
   FrontendDistributionDomainName:
     Value: !Sub "https://${FrontendDistribution.DomainName}"
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient

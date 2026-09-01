@@ -1,5 +1,5 @@
 <svg viewBox="0 0 1220 760" xmlns="http://www.w3.org/2000/svg" role="img"
-     aria-label="Web upload and tracking app architecture: a browser talks to a single CloudFront distribution that routes / to a static S3 frontend and /api/* to an HTTP API backed by three Lambdas, which read and write the same RawDocumentsBucket and EnrollmentRecordsTable the IDP pipeline uses. The actual file upload goes directly from the browser to S3 via a presigned URL, bypassing CloudFront and the API entirely.">
+     aria-label="Web upload and tracking app architecture: a browser talks to a single CloudFront distribution that routes / to a static S3 frontend and /api/* to an HTTP API backed by several Lambdas, which read and write the same RawDocumentsBucket and EnrollmentRecordsTable the IDP pipeline uses. The actual file upload goes directly from the browser to S3 via a presigned URL, bypassing CloudFront and the API entirely. The browser also calls Amazon Cognito directly (registration and login), and every WebAppApi route except GET /api/config requires the resulting JWT as a Bearer token.">
   <title>Web Upload/Tracking App — Architecture</title>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -30,6 +30,15 @@
     <line x1="590" y1="115" x2="590" y2="145" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
     <text x="602" y="134" font-size="9.5" fill="#24292f">HTTPS</text>
 
+    <!-- Cognito -->
+    <rect x="900" y="63" width="230" height="55" rx="8" fill="#f5eaf8" stroke="#8a2be2" stroke-width="1.5"/>
+    <text x="1015" y="85" text-anchor="middle" font-size="12.5" font-weight="700" fill="#5a1a80">Amazon Cognito · UserPool</text>
+    <text x="1015" y="99" text-anchor="middle" font-size="9" fill="#5a1a80">SignUp / ConfirmSignUp / InitiateAuth</text>
+    <text x="1015" y="111" text-anchor="middle" font-size="8.5" fill="#5a1a80" font-style="italic">called directly - no SDK, no backend involved</text>
+
+    <path d="M720,90 L900,90" fill="none" stroke="#8a2be2" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+    <text x="730" y="83" font-size="8.5" fill="#5a1a80">registration + login</text>
+
     <!-- CloudFront -->
     <rect x="390" y="147" width="400" height="66" rx="8" fill="#eef2ff" stroke="#3b5bdb" stroke-width="1.5"/>
     <text x="590" y="169" text-anchor="middle" font-size="13.5" font-weight="700" fill="#26359e">Amazon CloudFront</text>
@@ -50,9 +59,13 @@
 
     <!-- WebAppApi -->
     <rect x="810" y="253" width="220" height="62" rx="8" fill="#ffffff" stroke="#24292f" stroke-width="1.5"/>
-    <text x="920" y="277" text-anchor="middle" font-size="12.5" font-weight="600">WebAppApi</text>
-    <text x="920" y="292" text-anchor="middle" font-size="9.5" fill="#57606a">API Gateway HTTP API</text>
-    <text x="920" y="305" text-anchor="middle" font-size="9" fill="#57606a" font-style="italic">CachingDisabled, no caching of API responses</text>
+    <text x="920" y="273" text-anchor="middle" font-size="12.5" font-weight="600">WebAppApi</text>
+    <text x="920" y="286" text-anchor="middle" font-size="9" fill="#57606a">API Gateway HTTP API</text>
+    <text x="920" y="298" text-anchor="middle" font-size="8" fill="#57606a" font-style="italic">CachingDisabled</text>
+    <text x="920" y="309" text-anchor="middle" font-size="8" fill="#5a1a80" font-weight="600">requires a Cognito JWT (except GET /api/config)</text>
+
+    <path d="M1015,118 L1015,253" fill="none" stroke="#8a2be2" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+    <text x="1023" y="190" font-size="8.5" fill="#5a1a80" transform="rotate(90 1023 190)" text-anchor="middle">validates the JWT</text>
 
     <!-- Fan to 3 Lambdas -->
     <path d="M870,315 L750,370" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
