@@ -14,6 +14,25 @@ const STATUS_META = {
 
 const TERMINAL_STATUSES = new Set(["NEEDS_REVIEW", "SUBMITTED", "SUBMISSION_FAILED", "SUBMISSION_SKIPPED"]);
 const SYSTEM_FIELDS = ["documentId", "sourceBucket", "sourceKey"];
+// Mirrors idp_common.schema.EDITABLE_FIELDS. A required field that Textract
+// never found an answer for is missing from canonicalRecord entirely (not
+// just low-confidence) - the edit form must still offer an input for it, or
+// there'd be no way to fill it in and clear the resulting schema error.
+const CANONICAL_FIELDS = [
+  "state",
+  "documentType",
+  "applicantName",
+  "applicantDateOfBirth",
+  "applicantAddress",
+  "applicantPhone",
+  "medicareNumber",
+  "partAEffectiveDate",
+  "partBEffectiveDate",
+  "planSelected",
+  "planEffectiveDate",
+  "replacingExistingCoverage",
+  "signatureDate",
+];
 
 let pollTimer = null;
 let currentDocumentId = null;
@@ -99,26 +118,31 @@ function renderEditForm(doc) {
   const form = el("edit-form");
   form.innerHTML = "";
 
-  Object.entries(record)
-    .filter(([key]) => !SYSTEM_FIELDS.includes(key))
-    .forEach(([key, value]) => {
-      const row = document.createElement("div");
-      row.className = "field-row";
+  // Union of the known canonical fields (so a field Textract never found any
+  // answer for still gets an input) and whatever keys the record actually
+  // has (in case it carries something outside that list).
+  const extraKeys = Object.keys(record).filter((key) => !SYSTEM_FIELDS.includes(key) && !CANONICAL_FIELDS.includes(key));
+  const fields = [...CANONICAL_FIELDS, ...extraKeys];
 
-      const label = document.createElement("label");
-      label.setAttribute("for", `field-${key}`);
-      label.textContent = lowConfidence.has(key) ? `${key} (low confidence)` : key;
+  fields.forEach((key) => {
+    const value = record[key] || "";
+    const row = document.createElement("div");
+    row.className = "field-row";
 
-      const input = document.createElement("input");
-      input.type = "text";
-      input.id = `field-${key}`;
-      input.name = key;
-      input.value = value;
-      if (lowConfidence.has(key)) input.classList.add("flagged");
+    const label = document.createElement("label");
+    label.setAttribute("for", `field-${key}`);
+    label.textContent = lowConfidence.has(key) ? `${key} (low confidence)` : key;
 
-      row.append(label, input);
-      form.appendChild(row);
-    });
+    const input = document.createElement("input");
+    input.type = "text";
+    input.id = `field-${key}`;
+    input.name = key;
+    input.value = value;
+    if (lowConfidence.has(key)) input.classList.add("flagged");
+
+    row.append(label, input);
+    form.appendChild(row);
+  });
 
   el("resubmit-button").disabled = (doc.schemaErrors || []).length > 0;
 }
