@@ -77,8 +77,11 @@ function renderStepper(status) {
 function renderStatusLine(status) {
   const meta = statusMeta(status);
   const line = el("status-line");
-  line.textContent = meta.label;
   line.className = `status-line ${meta.tone}`;
+  el("status-line-label").textContent = meta.label;
+  // Still polling (see trackDocument) means processing is genuinely
+  // happening behind the scenes - show that rather than a static label.
+  el("status-spinner").hidden = TERMINAL_STATUSES.has(status);
 }
 
 function renderReadOnlyTable(record) {

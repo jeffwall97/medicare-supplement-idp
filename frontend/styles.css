@@ -191,13 +191,29 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
   font-weight: 600;
   padding: 8px 12px;
   border-radius: 6px;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .status-line.ok { color: var(--green); background: var(--green-bg); }
 .status-line.warn { color: var(--amber); background: var(--amber-bg); }
 .status-line.bad { color: var(--red); background: var(--red-bg); }
 .status-line.pending { color: var(--muted); background: #f0f2f4; }
+
+.spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.7;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
 .detail-table, .history-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .detail-table td { padding: 6px 4px; border-bottom: 1px solid var(--border); vertical-align: top; }
