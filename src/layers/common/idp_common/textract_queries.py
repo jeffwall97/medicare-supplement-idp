@@ -56,7 +56,19 @@ DEFAULT_SELECTION_FIELDS = {
     "replacingExistingCoverage": ["Yes", "No"],
 }
 
-VARIANT_SELECTION_FIELDS = {}
+VARIANT_SELECTION_FIELDS = {
+    # GA and TN's real forms label each plan checkbox "Plan A", "Plan G", etc.
+    # (unlike MI's bare "A", "G"), and neither offers MI's High-Deductible F/G
+    # options - matching each form's actual checkbox wording, per variant.
+    "GA": {
+        "planSelected": ["Plan A", "Plan F", "Plan G", "Plan N"],
+        "replacingExistingCoverage": ["Yes", "No"],
+    },
+    "TN": {
+        "planSelected": ["Plan A", "Plan D", "Plan G", "Plan N", "Plan C", "Plan F"],
+        "replacingExistingCoverage": ["Yes", "No"],
+    },
+}
 
 
 def get_queries_for_variant(variant):

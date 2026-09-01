@@ -18,6 +18,18 @@ CLASSIFICATION_RULES = [
         "documentType": "MEDICARE_SUPPLEMENT_ENROLLMENT",
         "markers": ["blue cross blue shield of michigan", "medicare supplement"],
     },
+    {
+        "variant": "GA",
+        "state": "GA",
+        "documentType": "MEDICARE_SUPPLEMENT_ENROLLMENT",
+        "markers": ["anthem blue cross and blue shield", "medicare supplement", "georgia"],
+    },
+    {
+        "variant": "TN",
+        "state": "TN",
+        "documentType": "MEDICARE_SUPPLEMENT_ENROLLMENT",
+        "markers": ["bluecross blueshield of tennessee", "blueelite"],
+    },
 ]
 
 UNKNOWN_STATE = "UNKNOWN"

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: Letter; margin: 0.55in 0.6in; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+    color: #1a1a1a;
+    font-size: 10.5px;
+    position: relative;
+  }
+  .watermark {
+    position: fixed;
+    top: 45%;
+    left: 8%;
+    width: 84%;
+    text-align: center;
+    font-size: 46px;
+    font-weight: 800;
+    color: rgba(200,30,30,0.16);
+    transform: rotate(-24deg);
+    z-index: 0;
+    letter-spacing: 2px;
+  }
+  .banner {
+    background: #003057;
+    color: #fff;
+    padding: 10px 14px;
+    border-radius: 4px;
+  }
+  .banner h1 { margin: 0; font-size: 17px; }
+  .banner .sub { font-size: 10.5px; opacity: .92; margin-top: 2px; }
+  .notice {
+    margin-top: 6px;
+    background: #fdeeee;
+    border: 1px solid #cf222e;
+    color: #8a1c1c;
+    font-size: 9.5px;
+    padding: 6px 10px;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+  .section { margin-top: 14px; }
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #d7e6f2;
+    padding: 4px 10px;
+    border-radius: 3px;
+  }
+  .section-head .tag {
+    background: #003057;
+    color: #fff;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-size: 10px;
+  }
+  .section-head .title { font-weight: 700; font-size: 12px; color: #003057; }
+  table.fields { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  table.fields td { border: 1px solid #8a8f98; padding: 5px 7px; vertical-align: top; }
+  .lbl { font-size: 8.5px; color: #55606b; display: block; margin-bottom: 2px; }
+  .val { font-size: 11.5px; font-weight: 600; font-family: "Courier New", monospace; }
+  .checks { margin-top: 6px; font-size: 10.5px; }
+  .checks span { margin-right: 16px; white-space: nowrap; }
+  .box { font-family: "DejaVu Sans", Arial, sans-serif; }
+  .sig { font-family: "Brush Script MT", cursive; font-size: 20px; }
+  .footer-note {
+    margin-top: 16px;
+    font-size: 8.5px;
+    color: #666;
+    border-top: 1px solid #ccc;
+    padding-top: 6px;
+  }
+</style>
+</head>
+<body>
+  <div class="watermark">SPECIMEN&nbsp;&mdash;&nbsp;SYNTHETIC TEST DATA</div>
+
+  <div class="banner">
+    <h1>Anthem Blue Cross and Blue Shield</h1>
+    <div class="sub">Application for Medicare Supplement and Anthem Extras &mdash; Georgia</div>
+  </div>
+  <div class="notice">
+    SPECIMEN DOCUMENT — reconstructed field layout from Anthem Blue Cross and Blue Shield's
+    "Application for Medicare Supplement and Anthem Extras – Georgia" (AICI_APP04-GA), filled with
+    fictitious data for software test purposes only. Not a real application, not submitted to or
+    issued by Anthem Blue Cross and Blue Shield, and not associated with a real person.
+  </div>
+
+  <div class="section">
+    <div class="section-head"><span class="tag">Section 1a</span><span class="title">Applicant Information</span></div>
+    <table class="fields">
+      <tr>
+        <td style="width:30%"><span class="lbl">Last Name</span><span class="val">Coleman</span></td>
+        <td style="width:30%"><span class="lbl">First Name</span><span class="val">Patricia</span></td>
+        <td style="width:14%"><span class="lbl">MI</span><span class="val">A</span></td>
+        <td style="width:26%"><span class="lbl">Sex</span><span class="checks box">☐ M &nbsp; ☒ F</span></td>
+      </tr>
+      <tr>
+        <td colspan="4"><span class="lbl">Home Street Address (Physical Address, not a P.O. Box)</span><span class="val">3387 Peachwood Lane</span></td>
+      </tr>
+      <tr>
+        <td><span class="lbl">City</span><span class="val">Marietta</span></td>
+        <td><span class="lbl">County</span><span class="val">Cobb</span></td>
+        <td><span class="lbl">State</span><span class="val">GA</span></td>
+        <td><span class="lbl">Zip Code</span><span class="val">30060</span></td>
+      </tr>
+      <tr>
+        <td colspan="2"><span class="lbl">Date of Birth (MM/DD/YYYY)</span><span class="val">09/18/1956</span></td>
+        <td colspan="2"><span class="lbl">Phone Number</span><span class="val">(770) 555-0164</span></td>
+      </tr>
+      <tr>
+        <td colspan="4"><span class="lbl">Medicare Number (include all letters and numbers)</span><span class="val">2FG5-UH6-JK89</span></td>
+      </tr>
+      <tr>
+        <td colspan="2"><span class="lbl">Hospital (Part A) Effective Date</span><span class="val">01/01/2026</span></td>
+        <td colspan="2"><span class="lbl">Medical (Part B) Effective Date</span><span class="val">01/01/2026</span></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><span class="tag">Section 1b</span><span class="title">Plan Selection</span></div>
+    <table class="fields">
+      <tr>
+        <td colspan="2"><span class="lbl">Have you used tobacco products of any form (including e-cigs) in the past 12 months?</span><span class="checks box">☐ Yes &nbsp; ☒ No</span></td>
+      </tr>
+      <tr>
+        <td>
+          <span class="lbl">I would like to apply for Medicare Supplement Plan (check only one box)</span>
+          <span class="checks box">☐ Plan A &nbsp; ☐ Plan F &nbsp; <b>☒ Plan G</b> &nbsp; ☐ Plan N</span>
+        </td>
+        <td style="width:32%"><span class="lbl">Requested Policy Effective Date</span><span class="val">05/01/2026</span></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><span class="tag">Section 1d</span><span class="title">Other Coverage Information</span></div>
+    <table class="fields">
+      <tr>
+        <td>
+          <span class="lbl">Do you intend to replace your current Medicare Supplement policy with this policy?</span>
+          <span class="checks box">☐ Yes &nbsp; ☒ No</span>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-head"><span class="tag">Section 1g</span><span class="title">Confirm and Sign</span></div>
+    <table class="fields">
+      <tr>
+        <td style="width:40%">
+          <span class="lbl">Applicant's printed name</span><span class="val">Patricia A. Coleman</span>
+        </td>
+        <td style="width:35%">
+          <span class="lbl">Signature of Applicant</span>
+          <span class="sig">Patricia A. Coleman</span>
+        </td>
+        <td style="width:25%">
+          <span class="lbl">Date</span><span class="val">04/12/2026</span>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="footer-note">
+    Field labels and layout reconstructed from Anthem Blue Cross and Blue Shield's "Application for
+    Medicare Supplement and Anthem Extras – Georgia" (AICI_APP04-GA) for use as a synthetic test
+    fixture. This document reproduces field structure only — not Anthem's logo, imagery, or full
+    form text — and contains no data about a real individual.
+  </div>
+</body>
+</html>

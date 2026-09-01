@@ -131,9 +131,18 @@ don't change it are unaffected.
   Enrollment API requires (API key / OAuth / mTLS), pulled from Secrets
   Manager.
 - `classify_document`: content-based, matched against
-  `CLASSIFICATION_RULES` — currently only has a fingerprint for the MI form.
-  Onboard each new state/carrier form by adding a rule (and, if its field
-  layout differs, a matching `VARIANT_*` entry in `textract_queries.py`).
+  `CLASSIFICATION_RULES` — currently has fingerprints for MI, GA (Anthem),
+  and TN (BlueCross BlueShield of Tennessee "BlueElite") forms. Onboard each
+  new state/carrier form by adding a rule (and, if its field layout differs,
+  a matching `VARIANT_*` entry in `textract_queries.py` — GA/TN both needed
+  a `VARIANT_SELECTION_FIELDS` override since their real forms label plan
+  checkboxes `"Plan A"`/`"Plan G"` rather than MI's bare `"A"`/`"G"`).
+  Confirmed against the TN fixture: correctly classified and extracted
+  (`planSelected: "Plan G"`, `schemaErrors: []`), but `applicantName` and
+  `applicantPhone` landed under the confidence threshold — TN's form splits
+  the name across four boxes (Last/Jr,Sr/First/MI) rather than three, which
+  the free-text Query answered correctly but less confidently. A real
+  finding about that form's layout, not a bug.
 - `canonical_enrollment_schema.json` is a draft — align its required
   fields with what the Enrollment API's XML actually requires.
 - Textract Queries extract free-text/typed answers reliably but can't read
@@ -243,6 +252,11 @@ missing required field each (all other fields filled in correctly):
 `...-no-medicare-number.pdf` (Medicare number field left blank —
 `schemaErrors: ["'medicareNumber' is a required property"]`). Both produce
 `NEEDS_REVIEW` with every other field still extracted correctly.
+Two more fixtures cover different states/carriers on the real-world happy
+path: `sample-medicare-supplement-application-ga.pdf` (Anthem, Georgia —
+`VALID`/`SUBMITTED`) and `...-tn.pdf` (BlueCross BlueShield of Tennessee
+BlueElite — extracts correctly but lands in `NEEDS_REVIEW` on confidence,
+see Known TODOs).
 
 ```
 aws s3 cp tests/fixtures/sample-medicare-supplement-application-mi.pdf \
