@@ -50,7 +50,7 @@ def test_marks_submitted_on_successful_post(monkeypatch):
     fake_response = MagicMock()
     fake_response.status = 200
     fake_response.__enter__.return_value = fake_response
-    monkeypatch.setattr(app.urllib.request, "urlopen", MagicMock(return_value=fake_response))
+    monkeypatch.setattr(app.enrollment_submission.urllib.request, "urlopen", MagicMock(return_value=fake_response))
 
     result = app.handler(_event(), None)
 
@@ -68,7 +68,7 @@ def test_marks_failed_on_non_2xx_response(monkeypatch):
     fake_response = MagicMock()
     fake_response.status = 500
     fake_response.__enter__.return_value = fake_response
-    monkeypatch.setattr(app.urllib.request, "urlopen", MagicMock(return_value=fake_response))
+    monkeypatch.setattr(app.enrollment_submission.urllib.request, "urlopen", MagicMock(return_value=fake_response))
 
     result = app.handler(_event(), None)
 
@@ -87,7 +87,7 @@ def test_marks_failed_on_connection_error(monkeypatch):
     def raise_url_error(*args, **kwargs):
         raise urllib.error.URLError("connection refused")
 
-    monkeypatch.setattr(app.urllib.request, "urlopen", raise_url_error)
+    monkeypatch.setattr(app.enrollment_submission.urllib.request, "urlopen", raise_url_error)
 
     result = app.handler(_event(), None)
 

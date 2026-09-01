@@ -39,13 +39,23 @@
       <p class="status-line" id="status-line"></p>
 
       <div id="detail-panel" hidden>
-        <h3>Extracted fields</h3>
+        <h3 id="canonical-table-heading">Extracted fields</h3>
         <table class="detail-table" id="canonical-table"></table>
 
         <div id="issues-panel" hidden>
           <h3>Needs attention</h3>
           <p id="low-confidence-fields"></p>
           <p id="schema-errors"></p>
+        </div>
+
+        <div id="edit-panel" hidden>
+          <h3>Review and correct</h3>
+          <form id="edit-form" class="edit-form"></form>
+          <p class="error" id="edit-error" hidden></p>
+          <div class="edit-actions">
+            <button type="button" id="save-button">Save changes</button>
+            <button type="button" id="resubmit-button" class="secondary">Resubmit</button>
+          </div>
         </div>
       </div>
     </section>

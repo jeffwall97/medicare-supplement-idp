@@ -525,6 +525,67 @@ Resources:
             Path: /api/documents/{documentId}
             Method: GET
 
+  EditDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-edit-document-${Stage}"
+      CodeUri: src/functions/edit_document/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EnrollmentRecordsTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - DynamoDBWritePolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - Statement:
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:GenerateDataKey]
+              Resource: !GetAtt DocumentsKmsKey.Arn
+      Events:
+        EditDocument:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref WebAppApi
+            Path: /api/documents/{documentId}
+            Method: PATCH
+
+  ResubmitDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-resubmit-document-${Stage}"
+      CodeUri: src/functions/resubmit_document/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EnrollmentRecordsTable
+          PROCESSED_BUCKET: !Ref ProcessedDocumentsBucket
+          ENROLLMENT_API_ENDPOINT: !If
+            - UseMockEnrollmentApi
+            - !Sub "https://${MockEnrollmentApi}.execute-api.${AWS::Region}.amazonaws.com/insurance-update"
+            - !Ref EnrollmentApiEndpoint
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - DynamoDBWritePolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - S3WritePolicy:
+            BucketName: !Ref ProcessedDocumentsBucket
+        - Statement:
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:GenerateDataKey]
+              Resource: !GetAtt DocumentsKmsKey.Arn
+      Events:
+        ResubmitDocument:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref WebAppApi
+            Path: /api/documents/{documentId}/resubmit
+            Method: POST
+
   ListDocumentsFunction:
     Type: AWS::Serverless::Function
     Properties:

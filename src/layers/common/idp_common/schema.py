@@ -12,6 +12,9 @@ with open(_SCHEMA_PATH) as _f:
 _VALIDATOR = Draft7Validator(_SCHEMA)
 REQUIRED_FIELDS = _SCHEMA.get("required", [])
 
+# System-managed fields excluded: not something a human review-edits.
+EDITABLE_FIELDS = set(_SCHEMA["properties"]) - {"documentId", "sourceBucket", "sourceKey"}
+
 
 def validate_canonical_record(record):
     return sorted({error.message for error in _VALIDATOR.iter_errors(record)})

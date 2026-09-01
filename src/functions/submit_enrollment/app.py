@@ -1,8 +1,7 @@
 import os
-import urllib.error
-import urllib.request
 
 import boto3
+from idp_common import enrollment_submission
 
 s3 = boto3.client("s3")
 table = boto3.resource("dynamodb").Table(os.environ["TABLE_NAME"])
@@ -23,26 +22,7 @@ def handler(event, context):
     obj = s3.get_object(Bucket=PROCESSED_BUCKET, Key=xml_key)
     xml_body = obj["Body"].read()
 
-    if not ENROLLMENT_API_ENDPOINT:
-        status = "SUBMISSION_SKIPPED"
-        error_message = None
-    else:
-        status = "SUBMITTED"
-        error_message = None
-        request = urllib.request.Request(
-            ENROLLMENT_API_ENDPOINT,
-            data=xml_body,
-            headers={"Content-Type": "application/xml"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                if response.status >= 300:
-                    status = "SUBMISSION_FAILED"
-                    error_message = f"Unexpected status code: {response.status}"
-        except urllib.error.URLError as exc:
-            status = "SUBMISSION_FAILED"
-            error_message = str(exc)
+    status, error_message = enrollment_submission.submit_to_enrollment_api(xml_body, ENROLLMENT_API_ENDPOINT)
 
     update_expression = "SET #status = :status"
     expression_names = {"#status": "status"}

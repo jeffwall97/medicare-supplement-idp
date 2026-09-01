@@ -13,8 +13,10 @@ const STATUS_META = {
 };
 
 const TERMINAL_STATUSES = new Set(["NEEDS_REVIEW", "SUBMITTED", "SUBMISSION_FAILED", "SUBMISSION_SKIPPED"]);
+const SYSTEM_FIELDS = ["documentId", "sourceBucket", "sourceKey"];
 
 let pollTimer = null;
+let currentDocumentId = null;
 
 const el = (id) => document.getElementById(id);
 
@@ -48,20 +50,11 @@ function renderStatusLine(status) {
   line.className = `status-line ${meta.tone}`;
 }
 
-function renderDetail(doc) {
-  const panel = el("detail-panel");
+function renderReadOnlyTable(record) {
   const table = el("canonical-table");
-  const record = doc.canonicalRecord;
-
-  if (!record) {
-    panel.hidden = true;
-    return;
-  }
-
-  panel.hidden = false;
   table.innerHTML = "";
   Object.entries(record)
-    .filter(([key]) => !["documentId", "sourceBucket", "sourceKey"].includes(key))
+    .filter(([key]) => !SYSTEM_FIELDS.includes(key))
     .forEach(([key, value]) => {
       const row = document.createElement("tr");
       const keyCell = document.createElement("td");
@@ -71,7 +64,9 @@ function renderDetail(doc) {
       row.append(keyCell, valueCell);
       table.appendChild(row);
     });
+}
 
+function renderIssues(doc) {
   const issuesPanel = el("issues-panel");
   const lowConfidence = doc.lowConfidenceFields || [];
   const schemaErrors = doc.schemaErrors || [];
@@ -88,7 +83,88 @@ function renderDetail(doc) {
   el("schema-errors").textContent = schemaErrors.length ? `Schema errors: ${schemaErrors.join("; ")}` : "";
 }
 
+function clearEditError() {
+  el("edit-error").hidden = true;
+}
+
+function showEditError(message) {
+  const errorEl = el("edit-error");
+  errorEl.textContent = message;
+  errorEl.hidden = false;
+}
+
+function renderEditForm(doc) {
+  const record = doc.canonicalRecord || {};
+  const lowConfidence = new Set(doc.lowConfidenceFields || []);
+  const form = el("edit-form");
+  form.innerHTML = "";
+
+  Object.entries(record)
+    .filter(([key]) => !SYSTEM_FIELDS.includes(key))
+    .forEach(([key, value]) => {
+      const row = document.createElement("div");
+      row.className = "field-row";
+
+      const label = document.createElement("label");
+      label.setAttribute("for", `field-${key}`);
+      label.textContent = lowConfidence.has(key) ? `${key} (low confidence)` : key;
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.id = `field-${key}`;
+      input.name = key;
+      input.value = value;
+      if (lowConfidence.has(key)) input.classList.add("flagged");
+
+      row.append(label, input);
+      form.appendChild(row);
+    });
+
+  el("resubmit-button").disabled = (doc.schemaErrors || []).length > 0;
+}
+
+function collectEditFormValues() {
+  const values = {};
+  el("edit-form")
+    .querySelectorAll("input")
+    .forEach((input) => {
+      values[input.name] = input.value;
+    });
+  return values;
+}
+
+function renderDetail(doc) {
+  const panel = el("detail-panel");
+  const editPanel = el("edit-panel");
+  const table = el("canonical-table");
+  const record = doc.canonicalRecord;
+
+  if (!record) {
+    panel.hidden = true;
+    return;
+  }
+
+  panel.hidden = false;
+  clearEditError();
+
+  const tableHeading = el("canonical-table-heading");
+  if (doc.status === "NEEDS_REVIEW") {
+    table.hidden = true;
+    tableHeading.hidden = true;
+    editPanel.hidden = false;
+    renderEditForm(doc);
+  } else {
+    table.hidden = false;
+    tableHeading.hidden = false;
+    editPanel.hidden = true;
+    renderReadOnlyTable(record);
+  }
+
+  renderIssues(doc);
+}
+
 function renderDocument(doc) {
+  currentDocumentId = doc.documentId;
   el("tracking-filename").textContent = doc.originalFilename || doc.sourceKey || "";
   renderStepper(doc.status);
   renderStatusLine(doc.status);
@@ -219,6 +295,65 @@ async function loadHistory() {
   }
 }
 
+async function patchDocument(documentId, edits) {
+  const response = await fetch(`${API_BASE}/documents/${documentId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(edits),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.message || `Save failed (${response.status})`);
+  return body;
+}
+
+async function resubmitDocument(documentId) {
+  const response = await fetch(`${API_BASE}/documents/${documentId}/resubmit`, { method: "POST" });
+  const body = await response.json();
+  if (!response.ok) {
+    const detail = body.schemaErrors && body.schemaErrors.length ? `: ${body.schemaErrors.join("; ")}` : "";
+    throw new Error((body.message || `Resubmit failed (${response.status})`) + detail);
+  }
+  return body;
+}
+
+async function handleSaveClick() {
+  if (!currentDocumentId) return;
+  clearEditError();
+  const button = el("save-button");
+  button.disabled = true;
+  button.textContent = "Saving…";
+
+  try {
+    const doc = await patchDocument(currentDocumentId, collectEditFormValues());
+    renderDocument(doc);
+    loadHistory();
+  } catch (err) {
+    showEditError(err.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Save changes";
+  }
+}
+
+async function handleResubmitClick() {
+  if (!currentDocumentId) return;
+  clearEditError();
+  const button = el("resubmit-button");
+  button.disabled = true;
+  button.textContent = "Resubmitting…";
+
+  try {
+    const doc = await resubmitDocument(currentDocumentId);
+    renderDocument(doc);
+    loadHistory();
+  } catch (err) {
+    showEditError(err.message);
+    button.disabled = false;
+  } finally {
+    button.textContent = "Resubmit";
+  }
+}
+
 function setupFileDrop() {
   const dropZone = el("file-drop");
   const fileInput = el("file-input");
@@ -253,5 +388,7 @@ function setupFileDrop() {
 
 document.getElementById("upload-form").addEventListener("submit", handleUploadSubmit);
 document.getElementById("refresh-button").addEventListener("click", loadHistory);
+document.getElementById("save-button").addEventListener("click", handleSaveClick);
+document.getElementById("resubmit-button").addEventListener("click", handleResubmitClick);
 setupFileDrop();
 loadHistory();
