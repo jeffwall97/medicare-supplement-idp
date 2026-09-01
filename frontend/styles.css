@@ -249,9 +249,10 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
   border-bottom: 1px solid var(--border);
 }
 .history-table td { padding: 8px 4px; border-bottom: 1px solid var(--border); }
-.history-table .actions-col { width: 32px; text-align: center; }
+.history-table .actions-col { width: 60px; text-align: center; white-space: nowrap; }
 
 .icon-button {
+  display: inline-flex;
   background: transparent;
   color: var(--muted);
   border: none;
@@ -259,9 +260,12 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
   border-radius: 5px;
   line-height: 0;
   align-self: auto;
+  text-decoration: none;
+  cursor: pointer;
 }
-.icon-button:hover:not(:disabled) { background: var(--red-bg); color: var(--red); }
 .icon-button:disabled { background: transparent; color: var(--border); cursor: not-allowed; }
+.view-button:hover { background: var(--primary-tint); color: var(--primary); }
+.delete-button:hover:not(:disabled) { background: var(--red-bg); color: var(--red); }
 .history-table tr:last-child td { border-bottom: none; }
 .history-table tr.clickable { cursor: pointer; }
 .history-table tr.clickable:hover { background: var(--bg); }

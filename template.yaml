@@ -651,6 +651,38 @@ Resources:
             Path: /api/documents/{documentId}
             Method: DELETE
 
+  ViewDocumentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-view-document-${Stage}"
+      CodeUri: src/functions/view_document/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EnrollmentRecordsTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - S3ReadPolicy:
+            BucketName: !Ref RawDocumentsBucket
+        - Statement:
+            # generate_presigned_url signs locally and succeeds regardless of
+            # permissions - it's the browser's actual GET against the signed
+            # URL that needs S3ReadPolicy above, plus this role's own
+            # kms:Decrypt for the DynamoDB lookup (same key as everywhere
+            # else in this template).
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt DocumentsKmsKey.Arn
+      Events:
+        ViewDocument:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref WebAppApi
+            Path: /api/documents/{documentId}/view
+            Method: GET
+
   FrontendBucket:
     Type: AWS::S3::Bucket
     Properties:

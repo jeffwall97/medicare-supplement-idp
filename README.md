@@ -96,7 +96,7 @@ API) — tighten before handling real PII. Served through the same CloudFront
 distribution as its API (`/api/*` behavior), so there's no cross-origin
 request involved and no CORS configuration needed for that path.
 
-- **`WebAppApi`** (HTTP API) + 6 Lambdas:
+- **`WebAppApi`** (HTTP API) + 7 Lambdas:
   | Route | Function | Responsibility |
   |---|---|---|
   | `POST /api/documents` | `request_upload` | Generates a `documentId`, signs a presigned S3 PUT URL (`incoming/web/<id>/<filename>`), and writes the initial `UPLOADED` tracking record. The browser then PUTs the file straight to S3 — never through this API — so large scanned documents aren't limited by API Gateway/Lambda payload sizes. |
@@ -105,6 +105,7 @@ request involved and no CORS configuration needed for that path.
   | `PATCH /api/documents/{documentId}` | `edit_document` | Corrects canonical fields on a `NEEDS_REVIEW` record (400 on an unknown/non-editable field name, 409 if the document isn't `NEEDS_REVIEW`). Merges the given fields onto the stored `canonicalRecord`, re-validates against the canonical schema, and drops any edited field names from `lowConfidenceFields` — a human just supplied them. Status stays `NEEDS_REVIEW`; editing alone never auto-submits. |
   | `POST /api/documents/{documentId}/resubmit` | `resubmit_document` | Submits a reviewed `NEEDS_REVIEW` record to the Enrollment API (409 if not `NEEDS_REVIEW`, 422 with `schemaErrors` if validation still fails). Builds and posts the XML the same way the pipeline's `transform_to_xml`/`submit_enrollment` steps do — via the shared `idp_common.enrollment_submission` module — reading `canonicalRecord` straight from DynamoDB rather than re-running Textract, since the human is correcting already-extracted values, not re-scanning the document. Clears `lowConfidenceFields` on success (resubmission is the human's sign-off) and lands on `SUBMITTED`/`SUBMISSION_FAILED`/`SUBMISSION_SKIPPED` exactly like the pipeline's own submission step. |
   | `DELETE /api/documents/{documentId}` | `delete_document` | Permanently deletes the tracking record and its underlying S3 objects (raw upload + any `canonical`/`xml` output). 404 if missing; 409 while `UPLOADED`/`PROCESSING` — deleting mid-flight would race with the pipeline's own `UpdateItem` calls (which recreate the item via `if_not_exists()` if it's gone), silently "resurrecting" a partial record. |
+  | `GET /api/documents/{documentId}/view` | `view_document` | 302-redirects to a short-lived (5 min) presigned S3 GET URL for the original uploaded PDF, with response headers forcing inline rendering (`ResponseContentType: application/pdf`, `ResponseContentDisposition: inline`). A plain `<a target="_blank">` link can point straight at this route — the browser's own top-level navigation follows the redirect directly to S3 (same pattern as the presigned PUT the upload flow already uses), so PDF bytes never get proxied through API Gateway/Lambda, and CORS doesn't apply to that kind of navigation at all. |
 - **`FrontendDistribution`** (CloudFront, default `*.cloudfront.net` domain — no custom domain) + **`FrontendBucket`** (private S3, OAC-only) serve `frontend/index.html`/`app.js`/`styles.css`.
 - `RawDocumentsBucket` has a `CorsConfiguration` allowing browser `PUT` (needed because the presigned upload target — the S3 REST endpoint — is a different origin than the page, even though the presigned URL itself is authorized independent of CORS).
 
@@ -118,10 +119,14 @@ buttons re-render the record from the response, so a save's updated
 `lowConfidenceFields`/`schemaErrors` and a resubmit's new terminal status
 show immediately without a poll.
 
-Each row in Recent uploads also has a delete (trash-can) button that calls
-`DELETE .../{documentId}` after a confirm prompt. It's greyed out while a
-document is `UPLOADED`/`PROCESSING` (matching the endpoint's 409), reflecting
-the current status filter/page and refreshing the list on success.
+Each row in Recent uploads also has a view (eye) link that opens
+`GET .../{documentId}/view` in a new tab — the browser follows its 302
+straight to the presigned S3 URL, so the PDF just opens in the tab's own
+PDF viewer — and a delete (trash-can) button that calls
+`DELETE .../{documentId}` after a confirm prompt. Delete is greyed out while
+a document is `UPLOADED`/`PROCESSING` (matching the endpoint's 409),
+reflecting the current status filter/page and refreshing the list on
+success.
 
 ### Deploying the frontend
 
