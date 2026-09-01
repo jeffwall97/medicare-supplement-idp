@@ -1,0 +1,119 @@
+<svg viewBox="0 0 1220 760" xmlns="http://www.w3.org/2000/svg" role="img"
+     aria-label="Web upload and tracking app architecture: a browser talks to a single CloudFront distribution that routes / to a static S3 frontend and /api/* to an HTTP API backed by three Lambdas, which read and write the same RawDocumentsBucket and EnrollmentRecordsTable the IDP pipeline uses. The actual file upload goes directly from the browser to S3 via a presigned URL, bypassing CloudFront and the API entirely.">
+  <title>Web Upload/Tracking App — Architecture</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b95000"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b5bdb"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1a7f37"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1220" height="760" fill="#f6f8fa"/>
+
+  <text x="610" y="28" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="19" font-weight="700" fill="#24292f">Web Upload/Tracking App</text>
+  <text x="610" y="47" text-anchor="middle" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="11.5" fill="#57606a">Feeds documents into, and reads status from, the same IDP pipeline shown in architecture.svg</text>
+
+  <g font-family="Segoe UI, Helvetica, Arial, sans-serif">
+    <!-- Browser -->
+    <rect x="460" y="65" width="260" height="50" rx="6" fill="#ffffff" stroke="#24292f" stroke-width="1.5"/>
+    <text x="590" y="86" text-anchor="middle" font-size="13" font-weight="600">User's browser</text>
+    <text x="590" y="101" text-anchor="middle" font-size="9.5" fill="#57606a">uploads a PDF, polls status</text>
+
+    <line x1="590" y1="115" x2="590" y2="145" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <text x="602" y="134" font-size="9.5" fill="#24292f">HTTPS</text>
+
+    <!-- CloudFront -->
+    <rect x="390" y="147" width="400" height="66" rx="8" fill="#eef2ff" stroke="#3b5bdb" stroke-width="1.5"/>
+    <text x="590" y="169" text-anchor="middle" font-size="13.5" font-weight="700" fill="#26359e">Amazon CloudFront</text>
+    <text x="590" y="184" text-anchor="middle" font-size="9.5" fill="#3b4bab">default *.cloudfront.net domain (no custom domain)</text>
+    <text x="590" y="198" text-anchor="middle" font-size="9.5" fill="#3b4bab" font-style="italic">one distribution, two cache behaviors</text>
+
+    <path d="M490,213 L260,213 L260,251" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <text x="270" y="235" font-size="9.5" fill="#24292f">/* (default)</text>
+
+    <path d="M690,213 L920,213 L920,251" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <text x="805" y="235" font-size="9.5" fill="#24292f">/api/*</text>
+
+    <!-- FrontendBucket -->
+    <rect x="150" y="253" width="220" height="62" rx="8" fill="#fff4e5" stroke="#b95000" stroke-width="1.5"/>
+    <text x="260" y="277" text-anchor="middle" font-size="12.5" font-weight="600" fill="#6b3600">S3 · FrontendBucket</text>
+    <text x="260" y="292" text-anchor="middle" font-size="9.5" fill="#6b4400">static HTML/CSS/JS, OAC-only</text>
+    <text x="260" y="305" text-anchor="middle" font-size="9" fill="#6b4400" font-style="italic">CachingOptimized</text>
+
+    <!-- WebAppApi -->
+    <rect x="810" y="253" width="220" height="62" rx="8" fill="#ffffff" stroke="#24292f" stroke-width="1.5"/>
+    <text x="920" y="277" text-anchor="middle" font-size="12.5" font-weight="600">WebAppApi</text>
+    <text x="920" y="292" text-anchor="middle" font-size="9.5" fill="#57606a">API Gateway HTTP API</text>
+    <text x="920" y="305" text-anchor="middle" font-size="9" fill="#57606a" font-style="italic">CachingDisabled, no caching of API responses</text>
+
+    <!-- Fan to 3 Lambdas -->
+    <path d="M870,315 L750,370" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M920,315 L920,370" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M970,315 L1090,370" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <text x="710" y="345" font-size="9" fill="#24292f">POST /api/documents</text>
+    <text x="925" y="345" font-size="9" fill="#24292f">GET /api/documents/&#123;id&#125;</text>
+    <text x="1050" y="345" font-size="9" fill="#24292f">GET /api/documents</text>
+
+    <!-- Lambdas -->
+    <rect x="650" y="372" width="180" height="60" rx="6" fill="#ffffff" stroke="#24292f" stroke-width="1.5"/>
+    <text x="740" y="394" text-anchor="middle" font-size="12" font-weight="600">RequestUpload</text>
+    <text x="740" y="408" text-anchor="middle" font-size="9" fill="#57606a">Lambda</text>
+
+    <rect x="830" y="372" width="180" height="60" rx="6" fill="#ffffff" stroke="#24292f" stroke-width="1.5"/>
+    <text x="920" y="394" text-anchor="middle" font-size="12" font-weight="600">GetDocumentStatus</text>
+    <text x="920" y="408" text-anchor="middle" font-size="9" fill="#57606a">Lambda</text>
+
+    <rect x="1010" y="372" width="180" height="60" rx="6" fill="#ffffff" stroke="#24292f" stroke-width="1.5"/>
+    <text x="1100" y="394" text-anchor="middle" font-size="12" font-weight="600">ListDocuments</text>
+    <text x="1100" y="408" text-anchor="middle" font-size="9" fill="#57606a">Lambda</text>
+
+    <!-- Data stores -->
+    <rect x="260" y="560" width="270" height="70" rx="8" fill="#fff4e5" stroke="#b95000" stroke-width="1.5"/>
+    <text x="395" y="583" text-anchor="middle" font-size="13" font-weight="600" fill="#6b3600">S3 · RawDocumentsBucket</text>
+    <text x="395" y="598" text-anchor="middle" font-size="9.5" fill="#6b4400">same bucket the IDP pipeline watches</text>
+    <text x="395" y="611" text-anchor="middle" font-size="9" fill="#6b4400" font-style="italic">CORS: allows browser PUT</text>
+
+    <rect x="700" y="560" width="290" height="70" rx="8" fill="#eef2ff" stroke="#3b5bdb" stroke-width="1.5"/>
+    <text x="845" y="583" text-anchor="middle" font-size="13" font-weight="600" fill="#26359e">DynamoDB · EnrollmentRecordsTable</text>
+    <text x="845" y="598" text-anchor="middle" font-size="9.5" fill="#3b4bab">same table the IDP pipeline writes to</text>
+    <text x="845" y="611" text-anchor="middle" font-size="9" fill="#3b4bab" font-style="italic">documentId is the shared key</text>
+
+    <!-- RequestUpload -> RawDocumentsBucket (signs, doesn't call) -->
+    <path d="M700,415 L560,415 L560,560" fill="none" stroke="#b95000" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrowAmber)"/>
+    <text x="565" y="490" font-size="9" fill="#6b3600">signs a presigned PUT URL</text>
+    <text x="565" y="502" font-size="9" fill="#6b3600">(no direct S3 call at request time)</text>
+
+    <!-- RequestUpload -> EnrollmentRecordsTable -->
+    <path d="M790,432 L790,560" fill="none" stroke="#3b5bdb" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+    <text x="797" y="500" font-size="9" fill="#26359e">PutItem</text>
+    <text x="797" y="511" font-size="9" fill="#26359e">status=UPLOADED</text>
+
+    <!-- GetDocumentStatus -> EnrollmentRecordsTable -->
+    <line x1="915" y1="432" x2="880" y2="560" stroke="#3b5bdb" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+    <text x="895" y="500" font-size="9" fill="#26359e">GetItem</text>
+
+    <!-- ListDocuments -> EnrollmentRecordsTable -->
+    <path d="M1080,432 L1080,480 L970,480 L970,560" fill="none" stroke="#3b5bdb" stroke-width="1.5" marker-end="url(#arrowBlue)"/>
+    <text x="985" y="474" font-size="9" fill="#26359e">Scan</text>
+
+    <!-- Browser -> RawDocumentsBucket direct PUT (bypasses CloudFront/API) -->
+    <path d="M470,90 L100,90 L100,595 L258,595" fill="none" stroke="#1a7f37" stroke-width="2" marker-end="url(#arrowGreen)"/>
+    <text x="30" y="330" font-size="10" fill="#166a2e" font-weight="600" transform="rotate(-90 30 330)" text-anchor="middle">direct PUT via presigned URL</text>
+    <text x="55" y="330" font-size="9" fill="#166a2e" transform="rotate(-90 55 330)" text-anchor="middle">bypasses CloudFront and the API entirely</text>
+
+    <!-- Hand-off to the IDP pipeline -->
+    <path d="M395,630 L395,675" fill="none" stroke="#57606a" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+    <path d="M845,630 L845,675" fill="none" stroke="#57606a" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+    <rect x="330" y="677" width="580" height="46" rx="8" fill="#f0f2f4" stroke="#57606a" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="620" y="695" text-anchor="middle" font-size="11.5" font-weight="600" fill="#24292f">Continues in the IDP processing pipeline</text>
+    <text x="620" y="710" text-anchor="middle" font-size="9.5" fill="#57606a">EventBridge → PipelineStateMachine — see architecture.svg</text>
+  </g>
+</svg>

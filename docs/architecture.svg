@@ -23,12 +23,13 @@
 
   <!-- ===== Ingest ===== -->
   <g font-family="Segoe UI, Helvetica, Arial, sans-serif">
-    <rect x="280" y="70" width="200" height="46" rx="6" fill="#ffffff" stroke="#57606a" stroke-width="1.5"/>
+    <rect x="270" y="70" width="220" height="60" rx="6" fill="#ffffff" stroke="#57606a" stroke-width="1.5"/>
     <text x="380" y="90" text-anchor="middle" font-size="13" font-weight="600" fill="#24292f">Enrollment document</text>
     <text x="380" y="105" text-anchor="middle" font-size="10.5" fill="#57606a">PDF or scanned image</text>
+    <text x="380" y="120" text-anchor="middle" font-size="8.5" fill="#57606a" font-style="italic">via CLI or the web app — see webapp-architecture.svg</text>
 
-    <line x1="380" y1="116" x2="380" y2="146" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <text x="392" y="135" font-size="10" fill="#24292f">PutObject: any S3 key</text>
+    <line x1="380" y1="130" x2="380" y2="146" stroke="#57606a" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <text x="392" y="141" font-size="10" fill="#24292f">PutObject: any S3 key</text>
 
     <rect x="240" y="148" width="280" height="54" rx="8" fill="#fff4e5" stroke="#b95000" stroke-width="1.5"/>
     <text x="380" y="170" text-anchor="middle" font-size="13" font-weight="600" fill="#6b3600">S3 · RawDocumentsBucket</text>

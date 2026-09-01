@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Medicare Supplement Enrollment — Document Intake</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="page-header">
+    <h1>Medicare Supplement Enrollment</h1>
+    <p class="subtitle">Upload an enrollment application and track it through processing.</p>
+  </header>
+
+  <main>
+    <section class="card" id="upload-card">
+      <h2>Upload a document</h2>
+      <form id="upload-form">
+        <label class="file-drop" id="file-drop" for="file-input">
+          <span id="file-drop-label">Choose a PDF or drag it here</span>
+          <input type="file" id="file-input" name="file" accept="application/pdf,.pdf" required>
+        </label>
+        <button type="submit" id="upload-button">Upload</button>
+      </form>
+      <p class="error" id="upload-error" hidden></p>
+    </section>
+
+    <section class="card" id="tracking-card" hidden>
+      <h2>Status</h2>
+      <p class="filename" id="tracking-filename"></p>
+
+      <ol class="stepper" id="stepper">
+        <li class="step" data-step="uploaded"><span class="dot"></span><span class="label">Uploaded</span></li>
+        <li class="step" data-step="processing"><span class="dot"></span><span class="label">Processing</span></li>
+        <li class="step" data-step="reviewed"><span class="dot"></span><span class="label">Reviewed</span></li>
+        <li class="step" data-step="submitted"><span class="dot"></span><span class="label">Submitted</span></li>
+      </ol>
+
+      <p class="status-line" id="status-line"></p>
+
+      <div id="detail-panel" hidden>
+        <h3>Extracted fields</h3>
+        <table class="detail-table" id="canonical-table"></table>
+
+        <div id="issues-panel" hidden>
+          <h3>Needs attention</h3>
+          <p id="low-confidence-fields"></p>
+          <p id="schema-errors"></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="history-card">
+      <div class="history-header">
+        <h2>Recent uploads</h2>
+        <button type="button" id="refresh-button">Refresh</button>
+      </div>
+      <table class="history-table" id="history-table">
+        <thead>
+          <tr><th>Document</th><th>State</th><th>Status</th><th>Uploaded</th></tr>
+        </thead>
+        <tbody id="history-body"></tbody>
+      </table>
+      <p class="empty" id="history-empty" hidden>No documents uploaded yet.</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

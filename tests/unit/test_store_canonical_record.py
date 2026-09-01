@@ -35,11 +35,12 @@ def test_writes_canonical_record_and_metadata_to_dynamodb(monkeypatch):
     result = app.handler(event, None)
 
     assert result == {"documentId": "doc-1", "status": "NEEDS_REVIEW"}
-    fake_table.put_item.assert_called_once()
-    item = fake_table.put_item.call_args.kwargs["Item"]
-    assert item["documentId"] == "doc-1"
-    assert item["status"] == "NEEDS_REVIEW"
-    assert item["state"] == "CA"
-    assert item["canonicalRecord"] == canonical_record
-    assert item["lowConfidenceFields"] == ["medicareNumber"]
-    assert "ingestedAt" in item
+    fake_table.update_item.assert_called_once()
+    call_kwargs = fake_table.update_item.call_args.kwargs
+    assert call_kwargs["Key"] == {"documentId": "doc-1"}
+    values = call_kwargs["ExpressionAttributeValues"]
+    assert values[":status"] == "NEEDS_REVIEW"
+    assert values[":state"] == "CA"
+    assert values[":canonicalRecord"] == canonical_record
+    assert values[":lowConfidenceFields"] == ["medicareNumber"]
+    assert "ingestedAt = if_not_exists(ingestedAt, :now)" in call_kwargs["UpdateExpression"]

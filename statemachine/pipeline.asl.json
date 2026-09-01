@@ -3,14 +3,18 @@
   "StartAt": "PrepareInput",
   "States": {
     "PrepareInput": {
-      "Type": "Pass",
-      "Parameters": {
-        "document": {
-          "bucket.$": "$.detail.bucket.name",
-          "key.$": "$.detail.object.key",
-          "documentId.$": "States.UUID()"
+      "Type": "Task",
+      "Resource": "${PrepareInputFunctionArn}",
+      "ResultPath": "$",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
         }
-      },
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
       "Next": "StartTextDetection"
     },
     "StartTextDetection": {
@@ -60,6 +64,25 @@
       "Type": "Task",
       "Resource": "${ClassifyDocumentFunctionArn}",
       "ResultPath": "$.classification",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "SendToDeadLetterQueue" }],
+      "Next": "MarkDocumentProcessing"
+    },
+    "MarkDocumentProcessing": {
+      "Type": "Task",
+      "Resource": "${MarkDocumentProcessingFunctionArn}",
+      "Parameters": {
+        "document.$": "$.document",
+        "classification.$": "$.classification"
+      },
+      "ResultPath": "$.processingMarker",
       "Retry": [
         {
           "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],

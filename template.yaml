@@ -114,6 +114,16 @@ Resources:
       NotificationConfiguration:
         EventBridgeConfiguration:
           EventBridgeEnabled: true
+      # Browser-enforced, separate from IAM: request_upload's presigned PUT
+      # URL is authorized fine without this, but the page (served from the
+      # CloudFront domain) and the S3 REST endpoint are different origins,
+      # so the browser itself blocks the PUT unless the bucket allows it.
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT]
+            AllowedOrigins: ["*"]
+            AllowedHeaders: ["*"]
+            MaxAge: 3000
 
   RawDocumentsBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -199,6 +209,13 @@ Resources:
     Metadata:
       BuildMethod: python3.13
 
+  PrepareInputFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-prepare-input-${Stage}"
+      CodeUri: src/functions/prepare_input/
+      Handler: app.handler
+
   StartTextDetectionFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -240,6 +257,28 @@ Resources:
       CodeUri: src/functions/classify_document/
       Handler: app.handler
       Layers: [!Ref CommonLayer]
+
+  MarkDocumentProcessingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-mark-document-processing-${Stage}"
+      CodeUri: src/functions/mark_document_processing/
+      Handler: app.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EnrollmentRecordsTable
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - Statement:
+            # DynamoDB SSE-KMS needs both: GenerateDataKey to mint a data key
+            # on a write with no cached one, Decrypt to use an existing one -
+            # a write can hit either depending on KMS's internal data-key
+            # cache state, so (like every other writer of this table) grant
+            # both rather than relying on which one happens to be cached.
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:GenerateDataKey]
+              Resource: !GetAtt DocumentsKmsKey.Arn
 
   StartTextractAnalysisFunction:
     Type: AWS::Serverless::Function
@@ -415,15 +454,192 @@ Resources:
             Path: /insurance-update
             Method: POST
 
+  # --- Web upload/tracking app -----------------------------------------
+  # Lets a user upload an enrollment PDF through a browser and poll its
+  # status as it moves through the pipeline. No auth yet (dev-only, matches
+  # the Mock Enrollment API's posture) - tighten before handling real PII.
+
+  WebAppApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+
+  RequestUploadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-request-upload-${Stage}"
+      CodeUri: src/functions/request_upload/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+      Environment:
+        Variables:
+          RAW_BUCKET: !Ref RawDocumentsBucket
+          TABLE_NAME: !Ref EnrollmentRecordsTable
+      Policies:
+        - S3WritePolicy:
+            BucketName: !Ref RawDocumentsBucket
+        - DynamoDBWritePolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - Statement:
+            # generate_presigned_url signs locally and succeeds regardless of
+            # permissions - it's the browser's actual PUT, authorized against
+            # this role at upload time, that needs these (same lesson as
+            # Textract's own S3/KMS access elsewhere in this template, just
+            # on the write path instead of the read path). Also covers this
+            # function's own PutItem to the KMS-encrypted EnrollmentRecordsTable.
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:GenerateDataKey]
+              Resource: !GetAtt DocumentsKmsKey.Arn
+      Events:
+        RequestUpload:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref WebAppApi
+            Path: /api/documents
+            Method: POST
+
+  GetDocumentStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-get-document-status-${Stage}"
+      CodeUri: src/functions/get_document_status/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EnrollmentRecordsTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - Statement:
+            # Reading a KMS-encrypted DynamoDB item needs kms:Decrypt too, not
+            # just the dynamodb:GetItem action DynamoDBReadPolicy grants.
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt DocumentsKmsKey.Arn
+      Events:
+        GetDocumentStatus:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref WebAppApi
+            Path: /api/documents/{documentId}
+            Method: GET
+
+  ListDocumentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "idp-list-documents-${Stage}"
+      CodeUri: src/functions/list_documents/
+      Handler: app.handler
+      Layers: [!Ref CommonLayer]
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EnrollmentRecordsTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EnrollmentRecordsTable
+        - Statement:
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt DocumentsKmsKey.Arn
+      Events:
+        ListDocuments:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref WebAppApi
+            Path: /api/documents
+            Method: GET
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # Static assets only, not sensitive - SSE-S3 rather than the shared
+      # KMS key avoids granting CloudFront's OAC service principal kms:Decrypt.
+      BucketName: !Sub "idp-medicare-enrollment-frontend-${Stage}-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FrontendOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "idp-frontend-oac-${Stage}"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution.Id}"
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        Origins:
+          - Id: FrontendS3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt FrontendOriginAccessControl.Id
+            # Required alongside OriginAccessControlId even for OAC (not the
+            # legacy OAI) - CloudFormation still validates this block exists.
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: WebAppApiOrigin
+            DomainName: !Sub "${WebAppApi}.execute-api.${AWS::Region}.amazonaws.com"
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: FrontendS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # AWS managed: CachingOptimized
+        CacheBehaviors:
+          - PathPattern: "/api/*"
+            TargetOriginId: WebAppApiOrigin
+            ViewerProtocolPolicy: https-only
+            AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # AWS managed: CachingDisabled
+            # Forwards all headers/query strings except Host - CloudFront must
+            # set its own Host (the execute-api domain) for API Gateway to
+            # route correctly; forwarding the viewer's Host would break it.
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AWS managed: AllViewerExceptHostHeader
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
   PipelineStateMachine:
     Type: AWS::Serverless::StateMachine
     Properties:
       Name: !Sub "idp-medicare-enrollment-pipeline-${Stage}"
       DefinitionUri: statemachine/pipeline.asl.json
       DefinitionSubstitutions:
+        PrepareInputFunctionArn: !GetAtt PrepareInputFunction.Arn
         StartTextDetectionFunctionArn: !GetAtt StartTextDetectionFunction.Arn
         CheckTextDetectionStatusFunctionArn: !GetAtt CheckTextDetectionStatusFunction.Arn
         ClassifyDocumentFunctionArn: !GetAtt ClassifyDocumentFunction.Arn
+        MarkDocumentProcessingFunctionArn: !GetAtt MarkDocumentProcessingFunction.Arn
         StartTextractAnalysisFunctionArn: !GetAtt StartTextractAnalysisFunction.Arn
         CheckTextractStatusFunctionArn: !GetAtt CheckTextractStatusFunction.Arn
         ParseAndValidateFunctionArn: !GetAtt ParseAndValidateFunction.Arn
@@ -433,11 +649,15 @@ Resources:
         DeadLetterQueueUrl: !Ref ProcessingDeadLetterQueue
       Policies:
         - LambdaInvokePolicy:
+            FunctionName: !Ref PrepareInputFunction
+        - LambdaInvokePolicy:
             FunctionName: !Ref StartTextDetectionFunction
         - LambdaInvokePolicy:
             FunctionName: !Ref CheckTextDetectionStatusFunction
         - LambdaInvokePolicy:
             FunctionName: !Ref ClassifyDocumentFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref MarkDocumentProcessingFunction
         - LambdaInvokePolicy:
             FunctionName: !Ref StartTextractAnalysisFunction
         - LambdaInvokePolicy:
@@ -482,3 +702,11 @@ Outputs:
   MockEnrollmentSubmissionsTableName:
     Condition: DeployMockEnrollmentApi
     Value: !Ref MockEnrollmentSubmissionsTable
+  WebAppApiUrl:
+    Value: !Sub "https://${WebAppApi}.execute-api.${AWS::Region}.amazonaws.com"
+  FrontendBucketName:
+    Value: !Ref FrontendBucket
+  FrontendDistributionId:
+    Value: !Ref FrontendDistribution
+  FrontendDistributionDomainName:
+    Value: !Sub "https://${FrontendDistribution.DomainName}"
