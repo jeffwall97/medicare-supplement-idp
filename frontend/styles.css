@@ -205,6 +205,19 @@ button.secondary:disabled { background: #fff; color: var(--border); border-color
 .history-header { display: flex; align-items: center; justify-content: space-between; }
 .history-header h2 { margin: 0; }
 
+.history-controls { display: flex; align-items: center; gap: 10px; }
+
+#status-filter {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--ink);
+  background: #fff;
+}
+#status-filter:focus { outline: none; border-color: var(--blue); }
+
 .history-table th {
   text-align: left;
   font-size: 11.5px;

@@ -63,7 +63,19 @@
     <section class="card" id="history-card">
       <div class="history-header">
         <h2>Recent uploads</h2>
-        <button type="button" id="refresh-button">Refresh</button>
+        <div class="history-controls">
+          <select id="status-filter">
+            <option value="">All statuses</option>
+            <option value="UPLOADED">Uploaded</option>
+            <option value="PROCESSING">Processing</option>
+            <option value="NEEDS_REVIEW">Needs review</option>
+            <option value="READY_FOR_SUBMISSION">Ready for submission</option>
+            <option value="SUBMITTED">Submitted</option>
+            <option value="SUBMISSION_FAILED">Submission failed</option>
+            <option value="SUBMISSION_SKIPPED">Submission skipped</option>
+          </select>
+          <button type="button" id="refresh-button">Refresh</button>
+        </div>
       </div>
       <table class="history-table" id="history-table">
         <thead>

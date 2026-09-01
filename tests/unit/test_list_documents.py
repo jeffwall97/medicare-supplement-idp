@@ -48,3 +48,35 @@ def test_invalid_limit_falls_back_to_default(monkeypatch):
     result = app.handler({"queryStringParameters": {"limit": "not-a-number"}}, None)
 
     assert result["statusCode"] == 200
+
+
+def test_status_filter_queries_status_index_instead_of_scanning(monkeypatch):
+    fake_table = MagicMock()
+    fake_table.query.return_value = {
+        "Items": [
+            {"documentId": "doc-2", "status": "NEEDS_REVIEW", "ingestedAt": "2026-01-02T00:00:00+00:00"},
+            {"documentId": "doc-1", "status": "NEEDS_REVIEW", "ingestedAt": "2026-01-01T00:00:00+00:00"},
+        ]
+    }
+    monkeypatch.setattr(app, "table", fake_table)
+
+    result = app.handler({"queryStringParameters": {"status": "NEEDS_REVIEW"}}, None)
+
+    body = json.loads(result["body"])
+    assert [d["documentId"] for d in body["documents"]] == ["doc-2", "doc-1"]
+    fake_table.scan.assert_not_called()
+
+    query_kwargs = fake_table.query.call_args.kwargs
+    assert query_kwargs["IndexName"] == "StatusIndex"
+    assert query_kwargs["ScanIndexForward"] is False
+    assert query_kwargs["Limit"] == 50
+
+
+def test_status_filter_respects_limit(monkeypatch):
+    fake_table = MagicMock()
+    fake_table.query.return_value = {"Items": []}
+    monkeypatch.setattr(app, "table", fake_table)
+
+    app.handler({"queryStringParameters": {"status": "SUBMITTED", "limit": "5"}}, None)
+
+    assert fake_table.query.call_args.kwargs["Limit"] == 5

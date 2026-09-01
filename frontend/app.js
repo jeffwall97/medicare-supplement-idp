@@ -294,13 +294,18 @@ function formatTimestamp(isoString) {
 
 async function loadHistory() {
   try {
-    const response = await fetch(`${API_BASE}/documents?limit=25`);
+    const status = el("status-filter").value;
+    const params = new URLSearchParams({ limit: "25" });
+    if (status) params.set("status", status);
+    const response = await fetch(`${API_BASE}/documents?${params}`);
     if (!response.ok) throw new Error(`Could not load history (${response.status})`);
     const { documents } = await response.json();
 
     const body = el("history-body");
     body.innerHTML = "";
-    el("history-empty").hidden = documents.length > 0;
+    const emptyEl = el("history-empty");
+    emptyEl.hidden = documents.length > 0;
+    emptyEl.textContent = status ? "No documents with this status." : "No documents uploaded yet.";
 
     documents.forEach((doc) => {
       const row = document.createElement("tr");
@@ -412,6 +417,7 @@ function setupFileDrop() {
 
 document.getElementById("upload-form").addEventListener("submit", handleUploadSubmit);
 document.getElementById("refresh-button").addEventListener("click", loadHistory);
+document.getElementById("status-filter").addEventListener("change", loadHistory);
 document.getElementById("save-button").addEventListener("click", handleSaveClick);
 document.getElementById("resubmit-button").addEventListener("click", handleResubmitClick);
 setupFileDrop();
