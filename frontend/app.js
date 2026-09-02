@@ -531,12 +531,18 @@ function formatTimestamp(isoString) {
 async function handleViewClick(documentId) {
   // Open the tab synchronously (within the click's own user gesture) so
   // popup blockers don't step in while we wait on the authenticated fetch;
-  // navigate it once we know where the (redirect-followed) PDF actually is.
+  // navigate it once we have the presigned URL. view_document hands that
+  // URL back as JSON rather than a redirect: a fetch that *follows* a
+  // cross-origin redirect needs the final (S3) response to carry CORS
+  // headers too, which the bucket doesn't grant for GET. Navigating the
+  // tab directly to the URL is a plain top-level navigation, not a
+  // CORS-checked request, so that restriction doesn't apply to it.
   const newTab = window.open("", "_blank");
   try {
     const response = await authFetch(`${API_BASE}/documents/${documentId}/view`);
     if (!response.ok) throw new Error(`Could not open document (${response.status})`);
-    if (newTab) newTab.location = response.url;
+    const { viewUrl } = await response.json();
+    if (newTab) newTab.location = viewUrl;
   } catch (err) {
     if (newTab) newTab.close();
     showHistoryError(err.message);

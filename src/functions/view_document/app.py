@@ -1,12 +1,15 @@
-"""GET /api/documents/{documentId}/view -> 302 redirect to a short-lived
-presigned S3 GET URL for the originally uploaded PDF.
+"""GET /api/documents/{documentId}/view -> {"viewUrl": <short-lived presigned
+S3 GET URL>} for the originally uploaded PDF.
 
-A plain <a target="_blank" href="/api/documents/{id}/view"> link can point
-straight at this route: the browser's top-level navigation follows the
-redirect directly to S3 (a different origin than CloudFront, same as the
-presigned PUT the upload flow already uses) rather than proxying PDF bytes
-through API Gateway/Lambda, and CORS doesn't apply to that kind of
-navigation at all - only to same-page fetch/XHR.
+Returns the URL as JSON rather than a 302 redirect: this route sits behind
+WebAppApi's Cognito authorizer, so the frontend must call it with fetch (an
+Authorization header can't ride along on a plain <a> navigation) - and a
+fetch that *follows* a cross-origin redirect needs the final response (S3)
+to carry CORS headers too, which RawDocumentsBucket's CORS policy doesn't
+grant for GET. Handing back the URL as data instead sidesteps that: the
+frontend does a plain top-level navigation to it (new tab), which - like
+the presigned PUT the upload flow already uses - isn't a CORS-checked
+request at all.
 """
 
 import os
@@ -45,4 +48,4 @@ def handler(event, context):
         ExpiresIn=VIEW_URL_EXPIRES_IN,
     )
 
-    return {"statusCode": 302, "headers": {"Location": view_url}}
+    return json_response(200, {"viewUrl": view_url})

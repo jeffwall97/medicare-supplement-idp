@@ -1,3 +1,4 @@
+import json
 import os
 from unittest.mock import MagicMock
 
@@ -32,7 +33,7 @@ def test_returns_404_when_no_source_key(monkeypatch):
     assert result["statusCode"] == 404
 
 
-def test_redirects_to_presigned_url(monkeypatch):
+def test_returns_presigned_url_as_json(monkeypatch):
     fake_table = MagicMock()
     fake_table.get_item.return_value = {
         "Item": {
@@ -48,8 +49,9 @@ def test_redirects_to_presigned_url(monkeypatch):
 
     result = app.handler(_event("doc-1"), None)
 
-    assert result["statusCode"] == 302
-    assert result["headers"]["Location"] == "https://raw-bucket.s3.amazonaws.com/signed-url"
+    assert result["statusCode"] == 200
+    body = json.loads(result["body"])
+    assert body == {"viewUrl": "https://raw-bucket.s3.amazonaws.com/signed-url"}
 
     call_kwargs = fake_s3.generate_presigned_url.call_args
     assert call_kwargs.args[0] == "get_object"
