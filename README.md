@@ -99,7 +99,7 @@ cross-origin request involved and no CORS configuration needed for that path.
   | Route | Function | Responsibility |
   |---|---|---|
   | `GET /api/config` | `get_auth_config` | The only unauthenticated route — returns the Cognito `userPoolClientId`/`region` the frontend needs before a user has ever logged in. |
-  | `POST /api/documents` | `request_upload` | Generates a `documentId`, signs a presigned S3 PUT URL (`incoming/web/<id>/<filename>`), and writes the initial `UPLOADED` tracking record. The browser then PUTs the file straight to S3 — never through this API — so large scanned documents aren't limited by API Gateway/Lambda payload sizes. |
+  | `POST /api/documents` | `request_upload` | Generates a `documentId`, signs a presigned S3 PUT URL (`incoming/web/<id>/<filename>`), and writes the initial `UPLOADED` tracking record — stamped with `uploadedBy` (the caller's email, read straight off the `email` claim API Gateway's JWT authorizer already decoded into the event, no extra Cognito call needed). The browser then PUTs the file straight to S3 — never through this API — so large scanned documents aren't limited by API Gateway/Lambda payload sizes. |
   | `GET /api/documents/{documentId}` | `get_document_status` | Returns the current tracking record, or 404. |
   | `GET /api/documents?limit=&status=` | `list_documents` | Returns recent documents, newest first. Unfiltered: a bounded `Scan` (fine at this project's dev/demo scale — see the TODO below to replace with a GSI if that changes). With `status=`: `Query`s `EnrollmentRecordsTable`'s `StatusIndex` GSI directly instead — already sorted, and correct at any volume unlike the Scan path. |
   | `PATCH /api/documents/{documentId}` | `edit_document` | Corrects canonical fields on a `NEEDS_REVIEW` record (400 on an unknown/non-editable field name, 409 if the document isn't `NEEDS_REVIEW`). Merges the given fields onto the stored `canonicalRecord`, re-validates against the canonical schema, and drops any edited field names from `lowConfidenceFields` — a human just supplied them. Status stays `NEEDS_REVIEW`; editing alone never auto-submits. |
@@ -127,6 +127,12 @@ rather than a plain link) — and a delete (trash-can) button that calls
 a document is `UPLOADED`/`PROCESSING` (matching the endpoint's 409),
 reflecting the current status filter/page and refreshing the list on
 success.
+
+Recent uploads also has an "Uploaded by" column (and the tracking detail
+view shows it under the filename) — the uploader's email, captured once at
+`request_upload` time and carried through unchanged by every later
+`UpdateItem` in the pipeline. Documents ingested via the CLI (bypassing
+`request_upload` entirely) have no `uploadedBy` and show blank there.
 
 ### Deploying the frontend
 

@@ -13,8 +13,11 @@ app = load_handler_module("request_upload")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
-def _event(filename):
-    return {"body": json.dumps({"filename": filename})}
+def _event(filename, email=None):
+    event = {"body": json.dumps({"filename": filename})}
+    if email:
+        event["requestContext"] = {"authorizer": {"jwt": {"claims": {"email": email}}}}
+    return event
 
 
 def test_returns_presigned_url_and_creates_upload_record(monkeypatch):
@@ -43,6 +46,21 @@ def test_returns_presigned_url_and_creates_upload_record(monkeypatch):
     assert item["documentId"] == body["documentId"]
     assert item["status"] == "UPLOADED"
     assert item["originalFilename"] == "application.pdf"
+    assert item["uploadedBy"] is None
+
+
+def test_records_uploader_email_from_jwt_claims(monkeypatch):
+    fake_s3 = MagicMock()
+    fake_s3.generate_presigned_url.return_value = "https://s3.example/presigned"
+    fake_table = MagicMock()
+    monkeypatch.setattr(app, "s3", fake_s3)
+    monkeypatch.setattr(app, "table", fake_table)
+    monkeypatch.setattr(app, "RAW_BUCKET", "raw-bucket")
+
+    app.handler(_event("application.pdf", email="broker@example.com"), None)
+
+    item = fake_table.put_item.call_args.kwargs["Item"]
+    assert item["uploadedBy"] == "broker@example.com"
 
 
 def test_sanitizes_unsafe_filename_characters(monkeypatch):

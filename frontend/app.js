@@ -419,6 +419,11 @@ function renderDetail(doc) {
 function renderDocument(doc) {
   currentDocumentId = doc.documentId;
   el("tracking-filename").textContent = doc.originalFilename || doc.sourceKey || "";
+
+  const uploadedByEl = el("tracking-uploaded-by");
+  uploadedByEl.hidden = !doc.uploadedBy;
+  uploadedByEl.textContent = doc.uploadedBy ? `Uploaded by ${doc.uploadedBy}` : "";
+
   renderStepper(doc.status);
   renderStatusLine(doc.status);
   renderDetail(doc);
@@ -562,6 +567,14 @@ function renderHistoryPage() {
       <td>${pillFor(doc.status)}</td>
       <td>${formatTimestamp(doc.ingestedAt)}</td>
     `;
+
+    // Built via textContent, not the innerHTML template above - unlike
+    // originalFilename (sanitized server-side to a safe charset),
+    // uploadedBy is a Cognito email the user themselves supplied at
+    // registration and isn't guaranteed free of HTML metacharacters.
+    const uploadedByCell = document.createElement("td");
+    uploadedByCell.textContent = doc.uploadedBy || "";
+    row.appendChild(uploadedByCell);
 
     const actionsCell = document.createElement("td");
     actionsCell.className = "actions-col";

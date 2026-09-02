@@ -41,6 +41,15 @@ def _sanitize_filename(filename):
     return name or "document.pdf"
 
 
+def _uploaded_by(event):
+    # WebAppApi's Cognito JWT authorizer decodes the ID token and hands the
+    # claims to the Lambda in the event - no extra Cognito API call needed.
+    # This route is always behind that authorizer (see template.yaml), but
+    # fall back to None rather than KeyError just in case.
+    claims = event.get("requestContext", {}).get("authorizer", {}).get("jwt", {}).get("claims", {})
+    return claims.get("email")
+
+
 def handler(event, context):
     body = json.loads(event.get("body") or "{}")
     filename = _sanitize_filename(body.get("filename"))
@@ -62,6 +71,7 @@ def handler(event, context):
             "sourceBucket": RAW_BUCKET,
             "sourceKey": key,
             "originalFilename": filename,
+            "uploadedBy": _uploaded_by(event),
         }
     )
 

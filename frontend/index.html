@@ -95,6 +95,7 @@
     <section class="card" id="tracking-card" hidden>
       <h2>Status</h2>
       <p class="filename" id="tracking-filename"></p>
+      <p class="filename" id="tracking-uploaded-by" hidden></p>
 
       <ol class="stepper" id="stepper">
         <li class="step" data-step="uploaded"><span class="dot"></span><span class="label">Uploaded</span></li>
@@ -149,7 +150,7 @@
       </div>
       <table class="history-table" id="history-table">
         <thead>
-          <tr><th>Document</th><th>State</th><th>Status</th><th>Uploaded</th><th class="actions-col"></th></tr>
+          <tr><th>Document</th><th>State</th><th>Status</th><th>Uploaded</th><th>Uploaded by</th><th class="actions-col"></th></tr>
         </thead>
         <tbody id="history-body"></tbody>
       </table>
